@@ -30,7 +30,15 @@
       </div>
     </div>
 
-    <button class="btn" type="submit">Start conversation</button>
+    <button class="btn" type="submit" id="start-btn">Start conversation</button>
   </form>
 </div>
+<script>
+  const form = document.querySelector("form");
+  const startBtn = document.getElementById("start-btn");
+  form.addEventListener("submit", () => {
+    startBtn.disabled = true;
+    startBtn.textContent = "Starting...";
+  });
+</script>
 {% endblock %}

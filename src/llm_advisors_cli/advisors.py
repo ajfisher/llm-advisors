@@ -4,11 +4,11 @@ import asyncio
 import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .config import AdvisorsConfig, ProviderParallelismConfig
 from .exceptions import ProviderError
-from .providers import ProviderResult, ask_claude, ask_codex, ask_gemini, ask_ollama, get_provider_functions
+from .providers import ProviderResult, get_provider_functions
 
 
 @dataclass
@@ -31,6 +31,16 @@ class ChairmanCall:
     provider: str
     prompt: str
     answer: str
+
+
+@dataclass
+class ProgressEvent:
+    event: str
+    turn: int
+    stage: str
+    provider: Optional[str] = None
+    status: Optional[str] = None
+    message: Optional[str] = None
 
 
 def alog(msg: str) -> None:
@@ -89,6 +99,11 @@ async def _call_provider_async(
     prompt: str,
     cfg: AdvisorsConfig,
     limiter: ConcurrencyLimiter,
+    *,
+    cancel_event: Optional[asyncio.Event] = None,
+    progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
+    stage: str,
+    turn_index: int,
 ) -> ProviderResult:
     providers = get_provider_functions(cfg)
     base = "ollama" if name.startswith("ollama/") else name
@@ -97,19 +112,56 @@ async def _call_provider_async(
         raise ProviderError(name, f"Provider '{name}' is not configured or disabled.")
 
     async with limiter.limit(base):
-        if base == "ollama":
-            model_override = _parse_ollama_member(name)
-            res = await asyncio.to_thread(fn, prompt, cfg, None, model_override)
-            if model_override:
-                res.provider = name
-        elif base == "codex":
-            res = await asyncio.to_thread(fn, prompt, cfg)
-        elif base == "claude":
-            res = await asyncio.to_thread(fn, prompt, cfg)
-        elif base == "gemini":
-            res = await asyncio.to_thread(fn, prompt, cfg)
-        else:
-            raise ProviderError(name, f"Unknown provider '{name}'")
+        if cancel_event and cancel_event.is_set():
+            raise ProviderError(name, "Cancelled by user")
+        if progress_handler:
+            progress_handler(
+                ProgressEvent(
+                    event="provider",
+                    turn=turn_index,
+                    stage=stage,
+                    provider=name,
+                    status="running",
+                )
+            )
+        try:
+            if base == "ollama":
+                model_override = _parse_ollama_member(name)
+                res = await fn(prompt, cfg, None, model_override, cancel_event)
+                if model_override:
+                    res.provider = name
+            elif base == "codex":
+                res = await fn(prompt, cfg, None, cancel_event)
+            elif base == "claude":
+                res = await fn(prompt, cfg, None, cancel_event)
+            elif base == "gemini":
+                res = await fn(prompt, cfg, None, cancel_event)
+            else:
+                raise ProviderError(name, f"Unknown provider '{name}'")
+        except Exception as exc:
+            if progress_handler:
+                progress_handler(
+                    ProgressEvent(
+                        event="provider",
+                        turn=turn_index,
+                        stage=stage,
+                        provider=name,
+                        status="error",
+                        message=str(exc),
+                    )
+                )
+            raise
+
+    if progress_handler:
+        progress_handler(
+            ProgressEvent(
+                event="provider",
+                turn=turn_index,
+                stage=stage,
+                provider=name,
+                status="done",
+            )
+        )
 
     return res
 
@@ -239,13 +291,27 @@ async def stage1_first_opinions_async(
     limiter: ConcurrencyLimiter,
     *,
     log_progress: bool = True,
+    cancel_event: Optional[asyncio.Event] = None,
+    progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
+    turn_index: int = 1,
 ) -> List[AdvisorCall]:
     tasks: List[tuple[int, asyncio.Task[ProviderResult]]] = []
 
     for idx, name in enumerate(member_names):
         if log_progress:
             alog(f"  - [stage1] asking {name} ...")
-        task = asyncio.create_task(_call_provider_async(name, question, cfg, limiter))
+        task = asyncio.create_task(
+            _call_provider_async(
+                name,
+                question,
+                cfg,
+                limiter,
+                cancel_event=cancel_event,
+                progress_handler=progress_handler,
+                stage="stage1",
+                turn_index=turn_index,
+            )
+        )
         tasks.append((idx, task))
 
     ordered_results: List[Optional[AdvisorCall]] = [None] * len(tasks)
@@ -271,6 +337,9 @@ async def stage2_reviews_async(
     limiter: ConcurrencyLimiter,
     *,
     log_progress: bool = True,
+    cancel_event: Optional[asyncio.Event] = None,
+    progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
+    turn_index: int = 1,
 ) -> List[ReviewCall]:
     review_prompt = _build_review_prompt(question, opinions)
     tasks: List[tuple[int, asyncio.Task[ProviderResult]]] = []
@@ -278,7 +347,18 @@ async def stage2_reviews_async(
     for idx, name in enumerate(reviewer_names):
         if log_progress:
             alog(f"  - [stage2] asking {name} for review ...")
-        task = asyncio.create_task(_call_provider_async(name, review_prompt, cfg, limiter))
+        task = asyncio.create_task(
+            _call_provider_async(
+                name,
+                review_prompt,
+                cfg,
+                limiter,
+                cancel_event=cancel_event,
+                progress_handler=progress_handler,
+                stage="stage2",
+                turn_index=turn_index,
+            )
+        )
         tasks.append((idx, task))
 
     ordered_results: List[Optional[ReviewCall]] = [None] * len(tasks)
@@ -304,11 +384,23 @@ async def stage3_chairman_async(
     limiter: ConcurrencyLimiter,
     *,
     log_progress: bool = True,
+    cancel_event: Optional[asyncio.Event] = None,
+    progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
+    turn_index: int = 1,
 ) -> ChairmanCall:
     prompt = _build_chairman_prompt(question, opinions, reviews)
     if log_progress:
         alog(f"  - [stage3] asking chairman '{chairman}' ...")
-    res = await _call_provider_async(chairman, prompt, cfg, limiter)
+    res = await _call_provider_async(
+        chairman,
+        prompt,
+        cfg,
+        limiter,
+        cancel_event=cancel_event,
+        progress_handler=progress_handler,
+        stage="stage3",
+        turn_index=turn_index,
+    )
     if log_progress:
         alog("  - [stage3] chairman done.")
     return ChairmanCall(provider=res.provider, prompt=prompt, answer=res.answer)

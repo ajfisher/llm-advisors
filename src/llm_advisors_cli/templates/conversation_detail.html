@@ -2,14 +2,47 @@
 {% block content %}
 <div class="card">
   <h2 style="margin-top:0;">Conversation {{ conversation_id }}</h2>
-  <p style="color:var(--muted); margin-top:6px;">{{ meta.question }}</p>
+  <p style="color:var(--muted); margin-top:6px;">{{ question }}</p>
   <div style="margin-top:10px;">
-    <span class="pill">Members: {{ meta.members|join(", ") }}</span>
-    <span class="pill">Chairman: {{ meta.chairman }}</span>
-    <span class="pill">Turns: {{ meta.turns }}</span>
-    {% if meta.error %}
+    <span class="pill">Members: {{ members|join(", ") }}</span>
+    <span class="pill">Chairman: {{ chairman }}</span>
+    <span class="pill">Turns: {{ turns_count }}</span>
+    {% if meta and meta.error %}
       <span class="pill" style="background:#ffb3b3; color:#280000;">Error recorded</span>
     {% endif %}
+    {% if meta and meta.error %}
+      <p style="color:var(--muted); margin-top:6px;">Error: {{ meta.error }}</p>
+    {% endif %}
+  </div>
+  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+    <form method="post" action="{{ url_for('delete_conversation', conversation_id=conversation_id) }}">
+      <button class="btn" type="submit" style="background:#ffb3b3;">Delete conversation</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" id="live-card">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h3 style="margin:0;">Live status</h3>
+    <button class="btn" id="stop-btn" {% if not job %}style="display:none;"{% endif %}>Stop</button>
+  </div>
+  <div style="margin-top:10px;">
+    Status: <span id="status-label" class="status pending">pending</span>
+    <span class="pill" id="turn-label">Turn 1 / {{ turns_count }}</span>
+  </div>
+  <div class="grid" style="margin-top:12px;">
+    <div>
+      <h4>Stage 1: Opinions</h4>
+      <div id="stage1-status"></div>
+    </div>
+    <div>
+      <h4>Stage 2: Reviews</h4>
+      <div id="stage2-status"></div>
+    </div>
+    <div>
+      <h4>Stage 3: Chairman</h4>
+      <div id="stage3-status"></div>
+    </div>
   </div>
 </div>
 
@@ -42,7 +75,79 @@
 
 {% if not turns %}
   <div class="card">
-    <p style="color:var(--muted);">No turn data recorded.</p>
+    <p style="color:var(--muted);">No turn data recorded yet.</p>
   </div>
 {% endif %}
+
+<script>
+  const conversationId = "{{ conversation_id }}";
+  const members = {{ members | tojson }};
+  const chairman = "{{ chairman }}";
+  const turnsTotal = {{ turns_count }};
+  const statusLabel = document.getElementById("status-label");
+  const turnLabel = document.getElementById("turn-label");
+  const stopBtn = document.getElementById("stop-btn");
+
+  function renderStage(containerId, mapping) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    const entries = Object.entries(mapping || {});
+    if (!entries.length) {
+      container.innerHTML = "<p style='color:var(--muted);'>No data yet.</p>";
+      return;
+    }
+    entries.forEach(([provider, status]) => {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.justifyContent = "space-between";
+      row.style.alignItems = "center";
+      row.style.marginBottom = "4px";
+      row.innerHTML = `<span>${provider}</span><span class="status ${status}">${status}</span>`;
+      container.appendChild(row);
+    });
+  }
+
+  function renderStatus(data) {
+    const jobStatus = data.job_status || data.status || "pending";
+    statusLabel.textContent = jobStatus;
+    statusLabel.className = `status ${jobStatus}`;
+    turnLabel.textContent = `Turn ${data.turn || 1} / ${data.turns || turnsTotal}`;
+    renderStage("stage1-status", data.stage1 || {});
+    renderStage("stage2-status", data.stage2 || {});
+    renderStage("stage3-status", data.stage3 || {});
+
+    if (jobStatus === "running") {
+      stopBtn.style.display = "inline-block";
+      stopBtn.disabled = false;
+    } else {
+      stopBtn.disabled = true;
+    }
+  }
+
+  async function pollStatus() {
+    try {
+      const res = await fetch(`/conversations/${conversationId}/status`);
+      if (!res.ok) return;
+      const data = await res.json();
+      renderStatus(data);
+      if (data.job_status === "running") {
+        setTimeout(pollStatus, 1200);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      stopBtn.disabled = true;
+      stopBtn.textContent = "Stopping...";
+      await fetch(`/conversations/${conversationId}/stop`, { method: "POST" });
+      setTimeout(pollStatus, 500);
+    });
+  }
+
+  pollStatus();
+</script>
 {% endblock %}

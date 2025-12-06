@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
+from .advisors import ProgressEvent
 from .config import AdvisorsConfig, ProviderParallelismConfig, load_config
 from .conversation import ConversationRun, run_conversation
 from .exceptions import ProviderError
@@ -13,6 +14,68 @@ from .exceptions import ProviderError
 def log(msg: str) -> None:
     """Log progress messages to stderr so stdout stays clean."""
     print(msg, file=sys.stderr, flush=True)
+
+
+class CLIProgressRenderer:
+    """Render per-member statuses in-place for the CLI."""
+
+    def __init__(self, members: List[str], chairman: str, turns: int):
+        self.members = members
+        self.chairman = chairman
+        self.turns = turns
+        self.turn = 1
+        self.prev_lines = 0
+        self.is_tty = sys.stderr.isatty()
+        self.status: Dict[Tuple[int, str, str], str] = {}
+        self._init_turn(1)
+
+    def _init_turn(self, turn: int) -> None:
+        self.turn = turn
+        for stage in ("stage1", "stage2"):
+            for member in self.members:
+                self.status[(turn, stage, member)] = "pending"
+        self.status[(turn, "stage3", self.chairman)] = "pending"
+
+    def handle(self, event: ProgressEvent) -> None:
+        if event.event == "turn" and event.status == "start":
+            self._init_turn(event.turn)
+            self._render()
+            return
+
+        if event.event == "provider" and event.provider:
+            key = (event.turn, event.stage, event.provider)
+            self.status[key] = event.status or "pending"
+            self._render()
+            return
+
+        if event.event == "conversation" and event.status == "done":
+            return
+
+    def _render(self) -> None:
+        lines: List[str] = []
+        lines.append(f"Turn {self.turn}/{self.turns}")
+        lines.append("Stage 1: Opinions")
+        for member in self.members:
+            lines.append(self._fmt_line(self.turn, "stage1", member))
+        lines.append("Stage 2: Reviews")
+        for member in self.members:
+            lines.append(self._fmt_line(self.turn, "stage2", member))
+        lines.append("Stage 3: Chairman")
+        lines.append(self._fmt_line(self.turn, "stage3", self.chairman))
+
+        block = "\n".join(lines) + "\n"
+
+        if self.is_tty and self.prev_lines:
+            # Move cursor up to rewrite previous block and clear it
+            sys.stderr.write(f"\x1b[{self.prev_lines}F")
+            sys.stderr.write("\x1b[0J")
+        sys.stderr.write(block)
+        sys.stderr.flush()
+        self.prev_lines = len(lines)
+
+    def _fmt_line(self, turn: int, stage: str, provider: str) -> str:
+        status = self.status.get((turn, stage, provider), "pending")
+        return f"  {provider:<20} {status}"
 
 
 def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.Namespace:
@@ -148,6 +211,8 @@ def main(argv: List[str] | None = None) -> None:
     chairman = args.chairman
     turns = max(1, args.turns)
 
+    renderer = CLIProgressRenderer(members, chairman, turns)
+
     try:
         run = run_conversation(
             question,
@@ -157,7 +222,8 @@ def main(argv: List[str] | None = None) -> None:
             cfg,
             log_dir=args.log_dir,
             log_enabled=not args.log_disabled,
-            show_progress=True,
+            show_progress=False,
+            progress_handler=renderer.handle,
         )
 
         if args.show_intermediate:

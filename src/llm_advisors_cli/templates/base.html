@@ -93,6 +93,20 @@
       border: 1px solid rgba(255, 255, 255, 0.05);
       color: var(--text);
     }
+    .status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .status.pending { color: var(--muted); }
+    .status.running { color: var(--accent); }
+    .status.done { color: #7de27c; }
+    .status.error { color: #ffb3b3; }
+    .status.cancelled { color: #ffce73; }
+    button[disabled] { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>
 <body>

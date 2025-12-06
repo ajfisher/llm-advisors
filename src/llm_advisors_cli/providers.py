@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -16,27 +17,55 @@ class ProviderResult:
     meta: Dict[str, Any]
 
 
-def _run_cmd(
+async def _run_cmd_async(
     provider: str,
     cmd: List[str],
     cwd: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> str:
     try:
-        out = subprocess.run(
-            cmd,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
             cwd=cwd,
-            text=True,
-            capture_output=True,
-            check=True,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-    except subprocess.CalledProcessError as e:
-        stderr = e.stderr.strip() if e.stderr else ""
-        msg = f"CLI failed with code {e.returncode}. Command: {shlex.join(cmd)}"
+    except FileNotFoundError:
+        raise ProviderError(provider, f"Command not found: {cmd[0]}")
+
+    communicate_task = asyncio.create_task(proc.communicate())
+    cancel_task: Optional[asyncio.Task[None]] = None
+
+    if cancel_event is not None:
+        cancel_task = asyncio.create_task(cancel_event.wait())
+        done, _ = await asyncio.wait(
+            {communicate_task, cancel_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if cancel_task in done:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+            communicate_task.cancel()
+            raise ProviderError(provider, "Cancelled by user")
+
+        cancel_task.cancel()
+
+    stdout_b, stderr_b = await communicate_task
+    stdout = (stdout_b or b"").decode().strip()
+    stderr = (stderr_b or b"").decode().strip()
+
+    if proc.returncode != 0:
+        msg = f"CLI failed with code {proc.returncode}. Command: {shlex.join(cmd)}"
         if stderr:
             msg += f"\nStderr: {stderr}"
-        raise ProviderError(provider, msg, returncode=e.returncode)
+        raise ProviderError(provider, msg, returncode=proc.returncode)
 
-    return (out.stdout or "").strip()
+    return stdout
 
 
 def _merge_provider_config(name: str, cfg: AdvisorsConfig) -> ProviderConfig:
@@ -54,10 +83,11 @@ def _merge_provider_config(name: str, cfg: AdvisorsConfig) -> ProviderConfig:
     )
 
 
-def ask_codex(
+async def ask_codex(
     prompt: str,
     cfg: AdvisorsConfig,
     cwd: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> ProviderResult:
     pcfg = _merge_provider_config("codex", cfg)
 
@@ -74,50 +104,51 @@ def ask_codex(
 
     cmd.append(prompt)
 
-    answer = _run_cmd("codex", cmd, cwd=cwd)
+    answer = await _run_cmd_async("codex", cmd, cwd=cwd, cancel_event=cancel_event)
     return ProviderResult("codex", answer, {})
 
 
-
-def ask_claude(
+async def ask_claude(
     prompt: str,
     cfg: AdvisorsConfig,
     cwd: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> ProviderResult:
     pcfg = _merge_provider_config("claude", cfg)
     cmd = [pcfg.command or "claude"]
-    # minimal: `claude -p prompt`. If you prefer `--output-format` etc, add here or in config.
     cmd.extend(pcfg.extra_args or ["-p"])
     cmd.append(prompt)
-    answer = _run_cmd("claude", cmd, cwd=cwd)
+    answer = await _run_cmd_async("claude", cmd, cwd=cwd, cancel_event=cancel_event)
     return ProviderResult("claude", answer, {})
 
 
-def ask_gemini(
+async def ask_gemini(
     prompt: str,
     cfg: AdvisorsConfig,
     cwd: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> ProviderResult:
     pcfg = _merge_provider_config("gemini", cfg)
     cmd = [pcfg.command or "gemini"]
     cmd.extend(pcfg.extra_args or ["-p"])
     cmd.append(prompt)
-    answer = _run_cmd("gemini", cmd, cwd=cwd)
+    answer = await _run_cmd_async("gemini", cmd, cwd=cwd, cancel_event=cancel_event)
     return ProviderResult("gemini", answer, {})
 
 
-def ask_ollama(
+async def ask_ollama(
     prompt: str,
     cfg: AdvisorsConfig,
     cwd: Optional[str] = None,
     model_override: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> ProviderResult:
     pcfg = _merge_provider_config("ollama", cfg)
     model = model_override or pcfg.model or "llama3.2"
     cmd = [pcfg.command or "ollama", "run", model]
     cmd.extend(pcfg.extra_args or [])
     cmd.append(prompt)
-    answer = _run_cmd("ollama", cmd, cwd=cwd)
+    answer = await _run_cmd_async("ollama", cmd, cwd=cwd, cancel_event=cancel_event)
     return ProviderResult(f"ollama/{model}", answer, {"model": model})
 
 
@@ -127,7 +158,7 @@ ProviderFn = callable
 
 
 def get_provider_functions(cfg: AdvisorsConfig):
-    """Return a {name: callable} mapping with config applied."""
+    """Return a {name: async callable} mapping with config applied."""
     fns = {
         "codex": ask_codex,
         "claude": ask_claude,
@@ -135,5 +166,8 @@ def get_provider_functions(cfg: AdvisorsConfig):
         "ollama": ask_ollama,
     }
 
-    # honour enabled = false in config
-    return {name: fn for name, fn in fns.items() if cfg.providers.get(name, None) is None or cfg.providers[name].enabled}
+    return {
+        name: fn
+        for name, fn in fns.items()
+        if cfg.providers.get(name, None) is None or cfg.providers[name].enabled
+    }

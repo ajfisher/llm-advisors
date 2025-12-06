@@ -6,7 +6,8 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+import threading
 
 from .advisors import (
     AdvisorCall,
@@ -16,6 +17,7 @@ from .advisors import (
     TurnRecord,
     alog,
     build_turn_prompt,
+    ProgressEvent,
     stage1_first_opinions_async,
     stage2_reviews_async,
     stage3_chairman_async,
@@ -137,8 +139,11 @@ async def run_conversation_async(
     log_enabled: bool = True,
     show_progress: bool = True,
     version: str = "0.2.0",
+    progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
+    cancel_token: Optional[threading.Event] = None,
+    conversation_id: Optional[str] = None,
 ) -> ConversationRun:
-    conversation_id = generate_conversation_id()
+    conversation_id = conversation_id or generate_conversation_id()
     created_at = datetime.now(timezone.utc).astimezone().isoformat()
     limiter = ConcurrencyLimiter(cfg)
     effective_log_dir = log_dir or cfg.logging.base_dir
@@ -157,9 +162,32 @@ async def run_conversation_async(
     logger.prepare(conversation_id)
     logger.write_meta(run, version=version)
 
+    internal_cancel = asyncio.Event()
+
+    async def _monitor_cancel() -> None:
+        if cancel_token is None:
+            return
+        while not internal_cancel.is_set():
+            if cancel_token.is_set():
+                internal_cancel.set()
+                break
+            await asyncio.sleep(0.1)
+
+    monitor_task: Optional[asyncio.Task[Any]] = None
+    if cancel_token is not None:
+        monitor_task = asyncio.create_task(_monitor_cancel())
+
+    def emit(event: ProgressEvent) -> None:
+        if progress_handler:
+            progress_handler(event)
+
     try:
         for turn_index in range(1, turns + 1):
+            if internal_cancel.is_set():
+                raise ProviderError("cancelled", "Conversation cancelled")
+
             turn_prompt = build_turn_prompt(question, run.turns)
+            emit(ProgressEvent(event="turn", turn=turn_index, stage="turn", status="start"))
             if show_progress:
                 alog(f"[turn {turn_index}/{turns}] Collecting first opinions from: {', '.join(members)} ...")
             opinions = await stage1_first_opinions_async(
@@ -168,6 +196,9 @@ async def run_conversation_async(
                 cfg,
                 limiter,
                 log_progress=show_progress,
+                cancel_event=internal_cancel,
+                progress_handler=progress_handler,
+                turn_index=turn_index,
             )
             if show_progress:
                 alog(f"[turn {turn_index}/{turns}] Requesting peer reviews from: {', '.join(members)} ...")
@@ -178,6 +209,9 @@ async def run_conversation_async(
                 cfg,
                 limiter,
                 log_progress=show_progress,
+                cancel_event=internal_cancel,
+                progress_handler=progress_handler,
+                turn_index=turn_index,
             )
             if show_progress:
                 alog(f"[turn {turn_index}/{turns}] Asking chairman '{chairman}' to synthesize final answer ...")
@@ -189,6 +223,9 @@ async def run_conversation_async(
                 cfg,
                 limiter,
                 log_progress=show_progress,
+                cancel_event=internal_cancel,
+                progress_handler=progress_handler,
+                turn_index=turn_index,
             )
 
             turn_record = TurnRecord(
@@ -200,14 +237,19 @@ async def run_conversation_async(
             )
             run.turns.append(turn_record)
             logger.write_turn(turn_record)
+            emit(ProgressEvent(event="turn", turn=turn_index, stage="turn", status="done"))
 
     except Exception as exc:  # pragma: no cover - defensive
         run.error = str(exc)
         logger.write_error_log(run.error)
         logger.write_meta(run, version=version)
         raise
+    finally:
+        if monitor_task:
+            monitor_task.cancel()
 
     logger.write_meta(run, version=version)
+    emit(ProgressEvent(event="conversation", turn=turns, stage="done", status="done"))
     return run
 
 
@@ -222,6 +264,9 @@ def run_conversation(
     log_enabled: bool = True,
     show_progress: bool = True,
     version: str = "0.2.0",
+    progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
+    cancel_token: Optional[threading.Event] = None,
+    conversation_id: Optional[str] = None,
 ) -> ConversationRun:
     return asyncio.run(
         run_conversation_async(
@@ -234,5 +279,8 @@ def run_conversation(
             log_enabled=log_enabled,
             show_progress=show_progress,
             version=version,
+            progress_handler=progress_handler,
+            cancel_token=cancel_token,
+            conversation_id=conversation_id,
         )
     )

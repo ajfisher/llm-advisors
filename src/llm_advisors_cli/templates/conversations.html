@@ -10,7 +10,7 @@
             <a href="{{ url_for('conversation_detail', conversation_id=conv.id) }}" style="font-weight:700;">{{ conv.id }}</a>
             <div style="color:var(--muted); font-size:14px;">{{ conv.meta.question }}</div>
           </div>
-          <div class="pill">{{ conv.meta.created_at }}</div>
+          <div class="pill">{{ conv.meta.created_at or conv.meta.status or "in progress" }}</div>
         </div>
         <div style="margin-top:6px;">
           <span class="pill">Members: {{ conv.meta.members|join(", ") }}</span>
