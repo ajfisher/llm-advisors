@@ -90,8 +90,15 @@ Useful flags:
     Accepts `codex claude gemini ollama` and Ollama model overrides
     like `ollama/llama3.1:8b`.
 - `--chairman`: choose who synthesises the final answer (defaults to config).
-- `--show-intermediate`: print stage 1 answers and stage 2 reviews before the
-    final answer.
+- `--turns`: run multiple council rounds (opinions → reviews → chairman) and
+    feed the last chairman answer into the next turn.
+- `--show-intermediate`: print stage 1 answers and stage 2 reviews for each turn.
+- `--show-turns`: print a short summary per turn after the final answer.
+- `--max-parallel`: global max concurrent provider calls (default 4).
+- `--ollama-parallel-mode`: `sequential` (default) | `limited` | `parallel`.
+- `--ollama-max-parallel`: when mode=`limited`, how many Ollama calls to allow.
+- `--log-dir`: where to write conversation artefacts (default `conversations/`).
+- `--log-disabled`: skip writing artefacts.
 
 Examples:
 
@@ -106,6 +113,27 @@ llm-advisors --members ollama/llama3.1:8b ollama/qwen2.5 codex --chairman codex 
 If a provider CLI fails, you’ll see a `ProviderError` with the CLI exit code
 and stderr – fix the underlying CLI and rerun, or disable that provider
 (see config below).
+
+### Multi-turn and artefacts
+
+- `--turns N` runs N council rounds. Each round includes the previous chairman
+  answer as context.
+- Every run gets a conversation ID. Artefacts live under `conversations/<id>/`
+  as `meta.json` plus `turn-01.json`, `turn-02.json`, etc. Disable with
+  `--log-disabled`.
+
+### Web UI
+
+A minimal local UI is available:
+
+```bash
+llm-advisors-web
+# or
+python -m llm_advisors_cli.web
+```
+
+It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
+members/chairman/turns, and browse past runs from `conversations/`.
 
 ## 5. Configuration
 
@@ -122,6 +150,7 @@ Structure:
 members = ["codex", "claude", "gemini", "ollama/llama3.2"]
 # who synthesises the final answer
 chairman = "claude"
+max_parallel = 4
 
 [providers.codex]
 enabled = true                      # set false to skip entirely
@@ -138,6 +167,14 @@ enabled = false                     # example of disabling one provider
 [providers.ollama]
 model = "llama3.2"                  # default model when using bare `ollama`
 extra_args = []                     # e.g. ["--timeout", "60"]
+
+[parallelism.ollama]
+mode = "sequential"                 # sequential | limited | parallel
+max_parallel = 1                    # used when mode = limited
+
+[logging]
+enabled = true
+base_dir = "conversations"
 ```
 
 Runtime flags always win over config values. To use a specific Ollama model
