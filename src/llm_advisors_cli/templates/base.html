@@ -6,112 +6,122 @@
   <title>LLM Advisors</title>
   <style>
     :root {
-      --bg: #0b1021;
-      --panel: #121831;
-      --accent: #6fe3ff;
-      --text: #f5f7ff;
-      --muted: #9fb3c8;
+      --burnt-orbit: #F77D57;
+      --burnt-orbit-soft: #F99578;
+      --dark-matter: #3A3A3A;
+      --dark-matter-strong: #1F1F1F;
+      --lunar-dust: #F5EDE4;
+      --lunar-dust-soft: #FFF9F4;
+      --border-subtle: rgba(58, 58, 58, 0.18);
+      --border-strong: rgba(58, 58, 58, 0.55);
+      --neptune: #7BB7A1;
+      --rocket-rose: #E58A9D;
+      --mars-clay: #8C5A4C;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: radial-gradient(circle at 20% 20%, rgba(111, 227, 255, 0.15), transparent 30%),
-                  radial-gradient(circle at 80% 0%, rgba(255, 153, 102, 0.18), transparent 25%),
-                  var(--bg);
-      color: var(--text);
-      font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+      background: var(--lunar-dust);
+      color: var(--dark-matter);
+      font-family: "Inter", "Space Grotesk", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
       min-height: 100vh;
     }
-    a { color: var(--accent); text-decoration: none; }
+    a { color: var(--burnt-orbit); text-decoration: none; }
     header {
       padding: 16px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: rgba(0, 0, 0, 0.25);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(6px);
+      background: var(--lunar-dust-soft);
+      border-bottom: 1px solid var(--border-subtle);
     }
-    nav a { margin-right: 12px; font-weight: 600; }
+    nav a { margin-right: 12px; font-weight: 600; color: var(--dark-matter); }
     .container {
-      max-width: 1100px;
+      max-width: 1200px;
       margin: 24px auto 48px auto;
       padding: 0 20px;
     }
     .card {
-      background: var(--panel);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 14px;
+      background: var(--lunar-dust-soft);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
       padding: 18px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+      box-shadow: none;
       margin-bottom: 16px;
     }
     .btn {
-      background: var(--accent);
-      color: #04111d;
+      background: var(--burnt-orbit);
+      color: #fff;
       border: none;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 10px 16px;
       font-weight: 700;
       cursor: pointer;
+      font-size: 14px;
     }
-    label { font-weight: 600; display: block; margin-bottom: 6px; }
-    input[type="text"], textarea, select, input[type="number"] {
+    .btn:hover { background: var(--burnt-orbit-soft); }
+    button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    label { font-weight: 600; display: block; margin-bottom: 6px; font-size: 14px; }
+    input[type="text"], textarea, select, input[type="number"], input[type="range"] {
       width: 100%;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
       padding: 10px 12px;
-      color: var(--text);
+      color: var(--dark-matter);
       margin-bottom: 12px;
+      font-size: 14px;
     }
+    input[type="range"] { padding: 0; }
     textarea { min-height: 140px; resize: vertical; }
     .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
     .pill {
       display: inline-block;
       padding: 4px 10px;
       border-radius: 999px;
-      background: rgba(111, 227, 255, 0.12);
-      border: 1px solid rgba(111, 227, 255, 0.3);
+      background: var(--lunar-dust);
+      border: 1px solid var(--border-subtle);
       margin: 2px 6px 2px 0;
-      color: var(--text);
-      font-size: 13px;
+      color: var(--dark-matter);
+      font-size: 12px;
+      font-weight: 600;
     }
     details {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 10px;
-      padding: 12px 14px;
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 12px;
       margin-bottom: 10px;
     }
-    summary { cursor: pointer; font-weight: 700; }
+    summary { cursor: pointer; font-weight: 700; font-size: 14px; }
     pre {
       white-space: pre-wrap;
-      background: rgba(0, 0, 0, 0.35);
+      background: var(--lunar-dust-soft);
       padding: 12px;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      color: var(--text);
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+      color: var(--dark-matter);
     }
     .status {
       display: inline-block;
-      padding: 2px 8px;
+      padding: 2px 10px;
       border-radius: 999px;
       font-weight: 700;
       font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.08);
+      border: 1px solid var(--border-subtle);
+      background: #fff;
+      color: var(--dark-matter);
     }
-    .status.pending { color: var(--muted); }
-    .status.running { color: var(--accent); }
-    .status.done { color: #7de27c; }
-    .status.error { color: #ffb3b3; }
-    .status.cancelled { color: #ffce73; }
-    button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .status.pending { background: var(--lunar-dust); color: var(--dark-matter); }
+    .status.running { background: var(--neptune); color: var(--dark-matter); }
+    .status.done { background: var(--burnt-orbit-soft); color: var(--dark-matter); }
+    .status.error { background: var(--mars-clay); color: #fff; }
+    .status.cancelled { background: var(--mars-clay); color: #fff; }
   </style>
 </head>
 <body>
   <header>
-    <div style="font-weight: 800; letter-spacing: 0.4px;">LLM Advisors</div>
+    <div style="font-weight: 800; letter-spacing: 0.4px; color: var(--dark-matter); font-family:'Space Grotesk','Inter',sans-serif;">LLM Advisors</div>
     <nav>
       <a href="{{ url_for('home') }}">Start</a>
       <a href="{{ url_for('list_conversations') }}">Conversations</a>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2 style="margin-top:0;">Start a new conversation</h2>
+  <h2 style="margin-top:0; font-family:'Space Grotesk','Inter',sans-serif;">Start a new conversation</h2>
   <form action="{{ url_for('start_conversation') }}" method="post">
     <label for="question">Question / prompt</label>
     <textarea id="question" name="question" placeholder="What should the council discuss?">{{ request.form.question or "" }}</textarea>
@@ -27,7 +27,7 @@
 
         <label for="turns">Turns (1-4)</label>
         <input id="turns" name="turns" type="range" min="1" max="4" step="1" value="{{ default_turns }}" oninput="turnValue.textContent = this.value">
-        <div style="color:var(--muted); font-size:14px;">Selected: <span id="turnValue">{{ default_turns }}</span></div>
+        <div style="color: var(--dark-matter); font-size:14px;">Selected: <span id="turnValue">{{ default_turns }}</span></div>
       </div>
     </div>
 
