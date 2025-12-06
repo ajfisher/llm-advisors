@@ -67,16 +67,16 @@
 {% for turn in turns %}
   <div class="card">
     <h3 style="margin-top:0;">Turn {{ turn.turn_index }}</h3>
-    <p style="color:var(--muted);">Prompt used for this turn:</p>
+    <p style="color:var(--muted);">Advisory approach for this turn:</p>
     <pre>{{ turn.turn_prompt }}</pre>
 
     <h4>Advisor answers</h4>
     {% for adv in turn.advisors %}
       <details>
-        <summary style="display:flex; justify-content:space-between; align-items:center;">
-          <span>{{ adv.provider }}</span>
-          <span style="display:flex; gap:6px; align-items:center;">
-            {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role }}</span>{% endif %}
+        <summary>
+          {{ adv.provider }}
+          <span style="float:right; display:flex; gap:6px; align-items:center;">
+            {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role|lower }}</span>{% endif %}
           </span>
         </summary>
         <pre>{{ adv.answer }}</pre>
@@ -92,7 +92,10 @@
     {% endfor %}
 
     <h4>Chairman ({{ turn.chairman.provider }})</h4>
-    <pre>{{ turn.chairman.answer }}</pre>
+    <details>
+      <summary>View response</summary>
+      <pre>{{ turn.chairman.answer }}</pre>
+    </details>
   </div>
 {% endfor %}
 
@@ -110,6 +113,7 @@
   const statusLabel = document.getElementById("status-label");
   const turnLabel = document.getElementById("turn-label");
   const stopBtn = document.getElementById("stop-btn");
+  const reloadKey = `conversation-reloaded-${conversationId}`;
   window.__roleMap = {};
 
   function renderStage(containerId, mapping) {
@@ -122,7 +126,7 @@
     }
     entries.forEach(([provider, statusData]) => {
       const status = typeof statusData === "string" ? statusData : statusData.status;
-      const role = (window.__roleMap || {})[provider];
+      const role = ((window.__roleMap || {})[provider] || "").toLowerCase();
       const row = document.createElement("div");
       row.style.display = "flex";
       row.style.justifyContent = "space-between";
@@ -136,17 +140,17 @@
       right.style.display = "flex";
       right.style.gap = "6px";
       right.style.alignItems = "center";
+      if (role) {
+        const roleChip = document.createElement("span");
+        roleChip.className = `status`;
+        roleChip.style.border = "1px solid rgba(255,255,255,0.15)";
+        roleChip.textContent = role;
+        right.appendChild(roleChip);
+      }
       const statusEl = document.createElement("span");
       statusEl.className = `status ${status}`;
       statusEl.textContent = status;
       right.appendChild(statusEl);
-      if (role) {
-        const chip = document.createElement("span");
-        chip.className = `status`;
-        chip.style.border = "1px solid rgba(255,255,255,0.15)";
-        chip.textContent = role;
-        right.appendChild(chip);
-      }
       row.appendChild(right);
       container.appendChild(row);
     });
@@ -166,7 +170,7 @@
     entries.forEach(([provider, data]) => {
       const message = typeof data === "object" ? data.message : "";
       if (!message) return;
-      const role = (window.__roleMap || {})[provider];
+      const role = ((window.__roleMap || {})[provider] || "").toLowerCase();
       const details = document.createElement("details");
       details.style.marginBottom = "8px";
       details.dataset.provider = provider;
@@ -174,24 +178,7 @@
         details.open = true;
       }
       const summary = document.createElement("summary");
-      summary.style.display = "flex";
-      summary.style.justifyContent = "space-between";
-      summary.style.alignItems = "center";
-      const label = document.createElement("span");
-      label.textContent = provider;
-      summary.appendChild(label);
-      const right = document.createElement("div");
-      right.style.display = "flex";
-      right.style.gap = "6px";
-      right.style.alignItems = "center";
-      if (role) {
-        const chip = document.createElement("span");
-        chip.className = "status";
-        chip.style.border = "1px solid rgba(255,255,255,0.15)";
-        chip.textContent = role;
-        right.appendChild(chip);
-      }
-      summary.appendChild(right);
+      summary.innerHTML = role ? `${provider} <span style="float:right;"><span class="status" style="border:1px solid rgba(255,255,255,0.15);">${role}</span></span>` : provider;
       details.appendChild(summary);
       const pre = document.createElement("pre");
       pre.textContent = message;
@@ -238,6 +225,9 @@
       renderStatus(data);
       if (data.job_status === "running") {
         setTimeout(pollStatus, 1200);
+      } else if (!sessionStorage.getItem(reloadKey)) {
+        sessionStorage.setItem(reloadKey, "1");
+        setTimeout(() => window.location.reload(), 500);
       }
     } catch (err) {
       console.error(err);
