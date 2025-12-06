@@ -527,7 +527,15 @@ async def run_conversation_async(
                 )
 
             turn_prompt = f"Turn {turn_index} ({kind})"
-            emit(ProgressEvent(event="turn", turn=turn_index, stage="turn", status="start"))
+            emit(
+                ProgressEvent(
+                    event="turn",
+                    turn=turn_index,
+                    stage="turn",
+                    status="start",
+                    message=json.dumps(roles) if roles else None,
+                )
+            )
             if show_progress:
                 alog(f"[turn {turn_index}/{effective_turns}] Collecting first opinions from: {', '.join(members)} ...")
             opinions = await stage1_first_opinions_async(

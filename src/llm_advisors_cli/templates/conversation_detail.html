@@ -46,7 +46,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="live-output-card">
   <h3 style="margin-top:0;">Live answers</h3>
   <div class="grid">
     <div>
@@ -72,8 +72,13 @@
 
     <h4>Advisor answers</h4>
     {% for adv in turn.advisors %}
-      <details open>
-        <summary>{{ adv.provider }}</summary>
+      <details>
+        <summary style="display:flex; justify-content:space-between; align-items:center;">
+          <span>{{ adv.provider }}</span>
+          <span style="display:flex; gap:6px; align-items:center;">
+            {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role }}</span>{% endif %}
+          </span>
+        </summary>
         <pre>{{ adv.answer }}</pre>
       </details>
     {% endfor %}
@@ -105,6 +110,7 @@
   const statusLabel = document.getElementById("status-label");
   const turnLabel = document.getElementById("turn-label");
   const stopBtn = document.getElementById("stop-btn");
+  window.__roleMap = {};
 
   function renderStage(containerId, mapping) {
     const container = document.getElementById(containerId);
@@ -116,18 +122,41 @@
     }
     entries.forEach(([provider, statusData]) => {
       const status = typeof statusData === "string" ? statusData : statusData.status;
+      const role = (window.__roleMap || {})[provider];
       const row = document.createElement("div");
       row.style.display = "flex";
       row.style.justifyContent = "space-between";
       row.style.alignItems = "center";
       row.style.marginBottom = "4px";
-      row.innerHTML = `<span>${provider}</span><span class="status ${status}">${status}</span>`;
+      const name = document.createElement("span");
+      name.textContent = provider;
+      row.appendChild(name);
+
+      const right = document.createElement("div");
+      right.style.display = "flex";
+      right.style.gap = "6px";
+      right.style.alignItems = "center";
+      const statusEl = document.createElement("span");
+      statusEl.className = `status ${status}`;
+      statusEl.textContent = status;
+      right.appendChild(statusEl);
+      if (role) {
+        const chip = document.createElement("span");
+        chip.className = `status`;
+        chip.style.border = "1px solid rgba(255,255,255,0.15)";
+        chip.textContent = role;
+        right.appendChild(chip);
+      }
+      row.appendChild(right);
       container.appendChild(row);
     });
   }
 
   function renderOutput(containerId, mapping) {
     const container = document.getElementById(containerId);
+    const openSet = new Set(
+      Array.from(container.querySelectorAll("details[open]")).map((d) => d.dataset.provider || "")
+    );
     container.innerHTML = "";
     const entries = Object.entries(mapping || {});
     if (!entries.length) {
@@ -137,10 +166,37 @@
     entries.forEach(([provider, data]) => {
       const message = typeof data === "object" ? data.message : "";
       if (!message) return;
-      const block = document.createElement("div");
-      block.style.marginBottom = "8px";
-      block.innerHTML = `<div style="font-weight:700; margin-bottom:4px;">${provider}</div><pre>${message}</pre>`;
-      container.appendChild(block);
+      const role = (window.__roleMap || {})[provider];
+      const details = document.createElement("details");
+      details.style.marginBottom = "8px";
+      details.dataset.provider = provider;
+      if (openSet.has(provider)) {
+        details.open = true;
+      }
+      const summary = document.createElement("summary");
+      summary.style.display = "flex";
+      summary.style.justifyContent = "space-between";
+      summary.style.alignItems = "center";
+      const label = document.createElement("span");
+      label.textContent = provider;
+      summary.appendChild(label);
+      const right = document.createElement("div");
+      right.style.display = "flex";
+      right.style.gap = "6px";
+      right.style.alignItems = "center";
+      if (role) {
+        const chip = document.createElement("span");
+        chip.className = "status";
+        chip.style.border = "1px solid rgba(255,255,255,0.15)";
+        chip.textContent = role;
+        right.appendChild(chip);
+      }
+      summary.appendChild(right);
+      details.appendChild(summary);
+      const pre = document.createElement("pre");
+      pre.textContent = message;
+      details.appendChild(pre);
+      container.appendChild(details);
     });
   }
 
@@ -149,6 +205,7 @@
     statusLabel.textContent = jobStatus;
     statusLabel.className = `status ${jobStatus}`;
     turnLabel.textContent = `Turn ${data.turn || 1} / ${data.turns || turnsTotal}`;
+    window.__roleMap = data.roles || {};
     renderStage("stage1-status", data.stage1 || {});
     renderStage("stage2-status", data.stage2 || {});
     renderStage("stage3-status", data.stage3 || {});
@@ -161,6 +218,15 @@
       stopBtn.disabled = false;
     } else {
       stopBtn.disabled = true;
+      stopBtn.style.display = "none";
+      const liveCard = document.getElementById("live-card");
+      if (liveCard) {
+        liveCard.style.display = "none";
+      }
+      const liveOutputCard = document.getElementById("live-output-card");
+      if (liveOutputCard) {
+        liveOutputCard.style.display = "none";
+      }
     }
   }
 

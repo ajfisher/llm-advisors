@@ -28,6 +28,7 @@ class ProgressState:
         self.status = "running"
         self.messages: Dict[str, str] = {}
         self.stage_status: Dict[tuple[int, str, str], Dict[str, str]] = {}
+        self.roles: Dict[str, str] = {}
         self._init_turn(self.turn)
 
     def _providers_for_stage(self, stage: str) -> List[str]:
@@ -46,6 +47,13 @@ class ProgressState:
         if event.event == "turn" and event.status == "start":
             self.turn = event.turn
             self._init_turn(event.turn)
+            if event.message:
+                try:
+                    roles = json.loads(event.message)
+                    if isinstance(roles, dict):
+                        self.roles.update(roles)
+                except Exception:
+                    pass
         elif event.event == "provider" and event.provider:
             key = (event.turn, event.stage, event.provider)
             self.stage_status[key] = {
@@ -74,6 +82,7 @@ class ProgressState:
             "stage2": stage_map("stage2"),
             "stage3": stage_map("stage3"),
             "messages": self.messages,
+            "roles": self.roles,
         }
 
 
