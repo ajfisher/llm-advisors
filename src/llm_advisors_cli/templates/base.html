@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM Advisors</title>
+  <style>
+    :root {
+      --burnt-orbit: #F77D57;
+      --burnt-orbit-soft: #F99578;
+      --dark-matter: #3A3A3A;
+      --dark-matter-strong: #1F1F1F;
+      --lunar-dust: #F5EDE4;
+      --lunar-dust-soft: #FFF9F4;
+      --border-subtle: rgba(58, 58, 58, 0.18);
+      --border-strong: rgba(58, 58, 58, 0.55);
+      --neptune: #7BB7A1;
+      --rocket-rose: #E58A9D;
+      --mars-clay: #8C5A4C;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--lunar-dust);
+      color: var(--dark-matter);
+      font-family: "Inter", "Space Grotesk", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+      min-height: 100vh;
+    }
+    a { color: var(--burnt-orbit); text-decoration: none; }
+    header {
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--lunar-dust-soft);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    nav a { margin-right: 12px; font-weight: 600; color: var(--dark-matter); }
+    .container {
+      max-width: 1200px;
+      margin: 24px auto 48px auto;
+      padding: 0 20px;
+    }
+    .card {
+      background: var(--lunar-dust-soft);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 18px;
+      box-shadow: none;
+      margin-bottom: 16px;
+    }
+    .btn {
+      background: var(--burnt-orbit);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn:hover { background: var(--burnt-orbit-soft); }
+    button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    label { font-weight: 600; display: block; margin-bottom: 6px; font-size: 14px; }
+    input[type="text"], textarea, select, input[type="number"], input[type="range"] {
+      width: 100%;
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--dark-matter);
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    input[type="range"] { padding: 0; }
+    textarea { min-height: 140px; resize: vertical; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--lunar-dust);
+      border: 1px solid var(--border-subtle);
+      margin: 2px 6px 2px 0;
+      color: var(--dark-matter);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    details {
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    summary { cursor: pointer; font-weight: 700; font-size: 14px; }
+    pre {
+      white-space: pre-wrap;
+      background: var(--lunar-dust-soft);
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+      color: var(--dark-matter);
+    }
+    .status {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      border: 1px solid var(--border-subtle);
+      background: #fff;
+      color: var(--dark-matter);
+    }
+    .status.pending { background: var(--lunar-dust); color: var(--dark-matter); }
+    .status.running { background: var(--neptune); color: var(--dark-matter); }
+    .status.done { background: var(--burnt-orbit-soft); color: var(--dark-matter); }
+    .status.error { background: var(--mars-clay); color: #fff; }
+    .status.cancelled { background: var(--mars-clay); color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="font-weight: 800; letter-spacing: 0.4px; color: var(--dark-matter); font-family:'Space Grotesk','Inter',sans-serif;">LLM Advisors</div>
+    <nav>
+      <a href="{{ url_for('home') }}">Start</a>
+      <a href="{{ url_for('list_conversations') }}">Conversations</a>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

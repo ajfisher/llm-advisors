@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0; font-family:'Space Grotesk','Inter',sans-serif;">Start a new conversation</h2>
+  <form action="{{ url_for('start_conversation') }}" method="post">
+    <label for="question">Question / prompt</label>
+    <textarea id="question" name="question" placeholder="What should the council discuss?">{{ request.form.question or "" }}</textarea>
+
+    <div class="grid">
+      <div>
+        <label>Members</label>
+        {% for member in members %}
+        <div style="margin-bottom:6px;">
+          <input type="checkbox" id="member-{{ loop.index }}" name="members" value="{{ member }}"
+            {% if member in default_members %}checked{% endif %}>
+          <label for="member-{{ loop.index }}" style="display:inline;">{{ member }}</label>
+        </div>
+        {% endfor %}
+      </div>
+      <div>
+        <label for="chairman">Chairman</label>
+        <select id="chairman" name="chairman">
+          {% for member in members %}
+          <option value="{{ member }}" {% if member == default_chairman %}selected{% endif %}>{{ member }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="turns">Turns (1-4)</label>
+        <input id="turns" name="turns" type="range" min="1" max="4" step="1" value="{{ default_turns }}" oninput="turnValue.textContent = this.value">
+        <div style="color: var(--dark-matter); font-size:14px;">Selected: <span id="turnValue">{{ default_turns }}</span></div>
+      </div>
+    </div>
+
+    <button class="btn" type="submit" id="start-btn">Start conversation</button>
+  </form>
+</div>
+<script>
+  const form = document.querySelector("form");
+  const startBtn = document.getElementById("start-btn");
+  form.addEventListener("submit", () => {
+    startBtn.disabled = true;
+    startBtn.textContent = "Starting...";
+  });
+</script>
+{% endblock %}

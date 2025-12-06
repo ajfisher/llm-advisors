@@ -1,3 +1,8 @@
+conversations/
+spec*.md
+task_log.md
+todo.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
