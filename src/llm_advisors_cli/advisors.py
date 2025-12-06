@@ -1,72 +1,120 @@
 from __future__ import annotations
 
+import asyncio
 import sys
-
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import List
+from typing import Any, Dict, List, Optional
 
-from .config import AdvisorsConfig
+from .config import AdvisorsConfig, ProviderParallelismConfig
+from .exceptions import ProviderError
 from .providers import ProviderResult, ask_claude, ask_codex, ask_gemini, ask_ollama, get_provider_functions
 
 
 @dataclass
-class ReviewResult:
+class AdvisorCall:
     provider: str
+    prompt: str
+    answer: str
+    meta: Dict[str, Any]
+
+
+@dataclass
+class ReviewCall:
+    provider: str
+    prompt: str
     raw_review: str
+
+
+@dataclass
+class ChairmanCall:
+    provider: str
+    prompt: str
+    answer: str
+
 
 def alog(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
+
 def _parse_ollama_member(name: str) -> Optional[str]:
-    """
-    If name is like 'ollama/llama3.1:8b', return 'llama3.1:8b'.
-    Otherwise return None.
-    """
+    """Return model name when member is like 'ollama/<model>'."""
     if not name.startswith("ollama/"):
         return None
     return name.split("/", 1)[1]
 
-def stage1_first_opinions(
-    question: str,
-    member_names: List[str],
-    cfg: CouncilConfig,
-) -> List[ProviderResult]:
+
+class ConcurrencyLimiter:
+    """Simple concurrency limiter with global and per-provider semaphores."""
+
+    def __init__(self, cfg: AdvisorsConfig):
+        self.global_sem = asyncio.Semaphore(max(1, cfg.max_parallel))
+        self.provider_sems: Dict[str, asyncio.Semaphore] = {}
+
+        for name, pcfg in cfg.parallelism.items():
+            limit = self._limit_for(pcfg)
+            if limit is not None:
+                self.provider_sems[name] = asyncio.Semaphore(max(1, limit))
+
+    @staticmethod
+    def _limit_for(pcfg: ProviderParallelismConfig) -> Optional[int]:
+        mode = (pcfg.mode or "").lower()
+        if mode == "sequential":
+            return 1
+        if mode == "limited":
+            return pcfg.max_parallel
+        return None
+
+    @staticmethod
+    def _provider_key(name: str) -> str:
+        return "ollama" if name.startswith("ollama/") else name
+
+    @asynccontextmanager
+    async def limit(self, provider_name: str):
+        key = self._provider_key(provider_name)
+        await self.global_sem.acquire()
+        provider_sem = self.provider_sems.get(key)
+        if provider_sem is not None:
+            await provider_sem.acquire()
+        try:
+            yield
+        finally:
+            self.global_sem.release()
+            if provider_sem is not None:
+                provider_sem.release()
+
+
+async def _call_provider_async(
+    name: str,
+    prompt: str,
+    cfg: AdvisorsConfig,
+    limiter: ConcurrencyLimiter,
+) -> ProviderResult:
     providers = get_provider_functions(cfg)
-    results: List[ProviderResult] = []
+    base = "ollama" if name.startswith("ollama/") else name
+    fn = providers.get(base)
+    if not fn:
+        raise ProviderError(name, f"Provider '{name}' is not configured or disabled.")
 
-    for name in member_names:
-        fn = providers.get("ollama" if name.startswith("ollama/") else name)
-        if not fn:
-            continue
-
-        alog(f"  - [stage1] asking {name} ...")
-
-        if name == "ollama":
-            res = ask_ollama(question, cfg)
-        else:
-            ollama_model = _parse_ollama_member(name)
-            if ollama_model is not None:
-                # e.g. name == 'ollama/llama3.1:8b'
-                res = ask_ollama(question, cfg, model_override=ollama_model)
-                # Preserve member name (so provider field is distinct)
+    async with limiter.limit(base):
+        if base == "ollama":
+            model_override = _parse_ollama_member(name)
+            res = await asyncio.to_thread(fn, prompt, cfg, None, model_override)
+            if model_override:
                 res.provider = name
-            elif name == "codex":
-                res = ask_codex(question, cfg)
-            elif name == "claude":
-                res = ask_claude(question, cfg)
-            elif name == "gemini":
-                res = ask_gemini(question, cfg)
-            else:
-                continue
+        elif base == "codex":
+            res = await asyncio.to_thread(fn, prompt, cfg)
+        elif base == "claude":
+            res = await asyncio.to_thread(fn, prompt, cfg)
+        elif base == "gemini":
+            res = await asyncio.to_thread(fn, prompt, cfg)
+        else:
+            raise ProviderError(name, f"Unknown provider '{name}'")
 
-        alog(f"  - [stage1] {name} done.")
-        results.append(res)
-
-    return results
+    return res
 
 
-
-def _build_review_prompt(question: str, opinions: List[ProviderResult]) -> str:
+def _build_review_prompt(question: str, opinions: List[AdvisorCall]) -> str:
     labelled = []
     for idx, res in enumerate(opinions):
         label = chr(ord("A") + idx)
@@ -109,48 +157,10 @@ FINAL:
 """.strip()
 
 
-def stage2_reviews(
-    question: str,
-    opinions: List[ProviderResult],
-    reviewer_names: List[str],
-    cfg: CouncilConfig,
-) -> List[ReviewResult]:
-    providers = get_provider_functions(cfg)
-    review_prompt = _build_review_prompt(question, opinions)
-    reviews: List[ReviewResult] = []
-
-    for name in reviewer_names:
-        fn = providers.get("ollama" if name.startswith("ollama/") else name)
-        if not fn:
-            continue
-
-        alog(f"  - [stage2] asking {name} for review ...")
-        ollama_model = _parse_ollama_member(name)
-
-        if name == "ollama":
-            res = ask_ollama(review_prompt, cfg)
-        elif ollama_model is not None:
-            res = ask_ollama(review_prompt, cfg, model_override=ollama_model)
-        elif name == "codex":
-            res = ask_codex(review_prompt, cfg)
-        elif name == "claude":
-            res = ask_claude(review_prompt, cfg)
-        elif name == "gemini":
-            res = ask_gemini(review_prompt, cfg)
-        else:
-            continue
-
-        alog(f"  - [stage2] {name} review done.")
-        reviews.append(ReviewResult(provider=name, raw_review=res.answer))
-
-    return reviews
-
-
-
 def _build_chairman_prompt(
     question: str,
-    opinions: List[ProviderResult],
-    reviews: List[ReviewResult],
+    opinions: List[AdvisorCall],
+    reviews: List[ReviewCall],
 ) -> str:
     opinions_text = "\n\n".join(
         f"{i+1}. [{o.provider}]\n{o.answer}"
@@ -194,31 +204,121 @@ NOTES:
 - Key points of disagreement and how you resolved them
 """.strip()
 
-def stage3_chairman(
-    question: str,
-    opinions: List[ProviderResult],
-    reviews: List[ReviewResult],
-    chairman: str,
-    cfg: CouncilConfig,
+
+def build_turn_prompt(
+    original_question: str,
+    previous_turns: List["TurnRecord"],
 ) -> str:
+    if not previous_turns:
+        return original_question
+
+    context_chunks = []
+    for turn in previous_turns:
+        context_chunks.append(
+            f"Turn {turn.turn_index} chairman answer:\n{turn.chairman.answer}"
+        )
+    context_block = "\n\n".join(context_chunks)
+
+    return f"""
+You are participating in a multi-turn council.
+
+Original question:
+{original_question}
+
+Context from previous turns:
+{context_block}
+
+Now provide your updated answer for this turn, improving on previous attempts.
+""".strip()
+
+
+async def stage1_first_opinions_async(
+    question: str,
+    member_names: List[str],
+    cfg: AdvisorsConfig,
+    limiter: ConcurrencyLimiter,
+    *,
+    log_progress: bool = True,
+) -> List[AdvisorCall]:
+    tasks: List[tuple[int, asyncio.Task[ProviderResult]]] = []
+
+    for idx, name in enumerate(member_names):
+        if log_progress:
+            alog(f"  - [stage1] asking {name} ...")
+        task = asyncio.create_task(_call_provider_async(name, question, cfg, limiter))
+        tasks.append((idx, task))
+
+    ordered_results: List[Optional[AdvisorCall]] = [None] * len(tasks)
+    for idx, task in tasks:
+        res = await task
+        ordered_results[idx] = AdvisorCall(
+            provider=res.provider,
+            prompt=question,
+            answer=res.answer,
+            meta=res.meta,
+        )
+        if log_progress:
+            alog(f"  - [stage1] {res.provider} done.")
+
+    return [r for r in ordered_results if r is not None]
+
+
+async def stage2_reviews_async(
+    question: str,
+    opinions: List[AdvisorCall],
+    reviewer_names: List[str],
+    cfg: AdvisorsConfig,
+    limiter: ConcurrencyLimiter,
+    *,
+    log_progress: bool = True,
+) -> List[ReviewCall]:
+    review_prompt = _build_review_prompt(question, opinions)
+    tasks: List[tuple[int, asyncio.Task[ProviderResult]]] = []
+
+    for idx, name in enumerate(reviewer_names):
+        if log_progress:
+            alog(f"  - [stage2] asking {name} for review ...")
+        task = asyncio.create_task(_call_provider_async(name, review_prompt, cfg, limiter))
+        tasks.append((idx, task))
+
+    ordered_results: List[Optional[ReviewCall]] = [None] * len(tasks)
+    for idx, task in tasks:
+        res = await task
+        ordered_results[idx] = ReviewCall(
+            provider=res.provider,
+            prompt=review_prompt,
+            raw_review=res.answer,
+        )
+        if log_progress:
+            alog(f"  - [stage2] {res.provider} review done.")
+
+    return [r for r in ordered_results if r is not None]
+
+
+async def stage3_chairman_async(
+    question: str,
+    opinions: List[AdvisorCall],
+    reviews: List[ReviewCall],
+    chairman: str,
+    cfg: AdvisorsConfig,
+    limiter: ConcurrencyLimiter,
+    *,
+    log_progress: bool = True,
+) -> ChairmanCall:
     prompt = _build_chairman_prompt(question, opinions, reviews)
-
-    ollama_model = _parse_ollama_member(chairman)
-
-    if chairman == "ollama":
-        res = ask_ollama(prompt, cfg)
-    elif ollama_model is not None:
-        res = ask_ollama(prompt, cfg, model_override=ollama_model)
-    elif chairman == "codex":
-        res = ask_codex(prompt, cfg)
-    elif chairman == "claude":
-        res = ask_claude(prompt, cfg)
-    elif chairman == "gemini":
-        res = ask_gemini(prompt, cfg)
-    else:
-        # Fallback: use the first opinion if chairman is unknown
-        return opinions[0].answer
-
-    return res.answer
+    if log_progress:
+        alog(f"  - [stage3] asking chairman '{chairman}' ...")
+    res = await _call_provider_async(chairman, prompt, cfg, limiter)
+    if log_progress:
+        alog("  - [stage3] chairman done.")
+    return ChairmanCall(provider=res.provider, prompt=prompt, answer=res.answer)
 
 
+# Typed forward reference for build_turn_prompt
+@dataclass
+class TurnRecord:
+    turn_index: int
+    opinions: List[AdvisorCall]
+    reviews: List[ReviewCall]
+    chairman: ChairmanCall
+    turn_prompt: str

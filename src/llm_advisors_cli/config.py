@@ -25,10 +25,27 @@ class ProviderConfig:
 
 
 @dataclass
+class ProviderParallelismConfig:
+    mode: str = "sequential"  # sequential | limited | parallel
+    max_parallel: int = 1
+
+
+@dataclass
+class LoggingConfig:
+    enabled: bool = True
+    base_dir: Path = field(default_factory=lambda: Path("conversations"))
+
+
+@dataclass
 class AdvisorsConfig:
     members: List[str] = field(default_factory=lambda: ["codex", "claude", "gemini", "ollama"])
     chairman: str = "codex"
     providers: Dict[str, ProviderConfig] = field(default_factory=dict)
+    max_parallel: int = 4
+    parallelism: Dict[str, ProviderParallelismConfig] = field(
+        default_factory=lambda: {"ollama": ProviderParallelismConfig()}
+    )
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
 def load_config() -> AdvisorsConfig:
@@ -51,6 +68,10 @@ def load_config() -> AdvisorsConfig:
     if isinstance(chairman, str):
         cfg.chairman = chairman
 
+    max_parallel = general.get("max_parallel")
+    if isinstance(max_parallel, int):
+        cfg.max_parallel = max_parallel
+
     # providers
     providers_section = data.get("providers", {})
     if isinstance(providers_section, dict):
@@ -66,5 +87,29 @@ def load_config() -> AdvisorsConfig:
             )
             cfg.providers[name] = pc
 
-    return cfg
+    # parallelism
+    parallelism_section = data.get("parallelism", {})
+    if isinstance(parallelism_section, dict):
+        for name, raw in parallelism_section.items():
+            if not isinstance(raw, dict):
+                continue
+            mode = str(raw.get("mode", cfg.parallelism.get(name, ProviderParallelismConfig()).mode)).lower()
+            max_p = raw.get("max_parallel", cfg.parallelism.get(name, ProviderParallelismConfig()).max_parallel)
+            if not isinstance(max_p, int):
+                try:
+                    max_p = int(max_p)
+                except (TypeError, ValueError):
+                    max_p = cfg.parallelism.get(name, ProviderParallelismConfig()).max_parallel
+            cfg.parallelism[name] = ProviderParallelismConfig(mode=mode, max_parallel=max_p)
 
+    # logging
+    logging_section = data.get("logging", {})
+    if isinstance(logging_section, dict):
+        enabled = logging_section.get("enabled")
+        if isinstance(enabled, bool):
+            cfg.logging.enabled = enabled
+        base_dir = logging_section.get("base_dir")
+        if isinstance(base_dir, str):
+            cfg.logging.base_dir = Path(base_dir)
+
+    return cfg

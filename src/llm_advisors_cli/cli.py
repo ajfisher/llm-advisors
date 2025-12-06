@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
-from .config import load_config
-from .advisors import stage1_first_opinions, stage2_reviews, stage3_chairman
+from .config import AdvisorsConfig, ProviderParallelismConfig, load_config
+from .conversation import ConversationRun, run_conversation
 from .exceptions import ProviderError
+
 
 def log(msg: str) -> None:
     """Log progress messages to stderr so stdout stays clean."""
     print(msg, file=sys.stderr, flush=True)
 
-def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
-    cfg = load_config()
 
+def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="llm-advisors",
         description="Multi-model advisors using Codex, Claude Code, Gemini CLI and Ollama",
@@ -44,54 +45,130 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--turns",
+        type=int,
+        default=1,
+        help="Number of council turns to run (default 1).",
+    )
+    parser.add_argument(
+        "--show-turns",
+        action="store_true",
+        help="Print per-turn summaries after the final answer.",
+    )
+    parser.add_argument(
         "--show-intermediate",
         action="store_true",
-        help="Print stage 1 and stage 2 outputs before the final answer.",
+        help="Print stage 1 and stage 2 outputs for each turn before the final answer.",
+    )
+    parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=cfg.max_parallel,
+        help="Global max parallel tasks (overrides config.general.max_parallel).",
+    )
+    parser.add_argument(
+        "--ollama-parallel-mode",
+        choices=["sequential", "limited", "parallel"],
+        default=None,
+        help="Override Ollama parallel mode (sequential | limited | parallel).",
+    )
+    parser.add_argument(
+        "--ollama-max-parallel",
+        type=int,
+        default=None,
+        help="Override Ollama max parallel when mode=limited.",
+    )
+    parser.add_argument(
+        "--log-disabled",
+        action="store_true",
+        help="Disable writing conversation artefacts to disk.",
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=None,
+        help="Directory to store conversation artefacts (overrides config).",
     )
 
     return parser.parse_args(argv)
 
 
+def _apply_cli_overrides(cfg: AdvisorsConfig, args: argparse.Namespace) -> AdvisorsConfig:
+    cfg.max_parallel = max(1, args.max_parallel)
+
+    ollama_parallel = cfg.parallelism.get("ollama", ProviderParallelismConfig())
+    if args.ollama_parallel_mode:
+        ollama_parallel.mode = args.ollama_parallel_mode
+    if args.ollama_max_parallel is not None:
+        ollama_parallel.max_parallel = max(1, args.ollama_max_parallel)
+    cfg.parallelism["ollama"] = ollama_parallel
+
+    if args.log_dir:
+        cfg.logging.base_dir = args.log_dir
+    if args.log_disabled:
+        cfg.logging.enabled = False
+
+    return cfg
+
+
+def _print_turn_summary(turn, total_turns: int) -> None:
+    print(f"=== TURN {turn.turn_index}/{total_turns} ===\n")
+    print("=== STAGE 1: FIRST OPINIONS ===\n")
+    for i, opinion in enumerate(turn.opinions, start=1):
+        print(f"[{i}] {opinion.provider}")
+        print(opinion.answer)
+        print()
+
+    print("=== STAGE 2: PEER REVIEWS ===\n")
+    for review in turn.reviews:
+        print(f"[Review by {review.provider}]")
+        print(review.raw_review)
+        print()
+
+    print("=== STAGE 3: CHAIRMAN ===\n")
+    print(f"[{turn.chairman.provider}]")
+    print(turn.chairman.answer)
+    print()
+
+
+def _print_turn_overview(run: ConversationRun) -> None:
+    print("\n=== TURN OVERVIEW ===\n")
+    for turn in run.turns:
+        print(f"Turn {turn.turn_index}:")
+        print(f"- Chairman ({turn.chairman.provider}) answer:\n{turn.chairman.answer}\n")
+
+
 def main(argv: List[str] | None = None) -> None:
     cfg = load_config()
-    args = _parse_args(argv)
+    args = _parse_args(cfg, argv)
+    cfg = _apply_cli_overrides(cfg, args)
 
     question = " ".join(args.question)
     members = args.members
     chairman = args.chairman
+    turns = max(1, args.turns)
 
     try:
-        # Stage 1: first opinions
-        log(f"[1/3] Collecting first opinions from: {', '.join(members)} ...")
-        opinions = stage1_first_opinions(question, members, cfg)
-        log(f"[1/3] Done. Received {len(opinions)} opinions.")
+        run = run_conversation(
+            question,
+            members,
+            chairman,
+            turns,
+            cfg,
+            log_dir=args.log_dir,
+            log_enabled=not args.log_disabled,
+            show_progress=True,
+        )
 
         if args.show_intermediate:
-            print("=== STAGE 1: FIRST OPINIONS ===\n")
-            for i, o in enumerate(opinions, start=1):
-                print(f"[{i}] {o.provider}")
-                print(o.answer)
-                print()
-
-        # Stage 2: peer reviews
-        log(f"[2/3] Requesting peer reviews from: {', '.join(members)} ...")
-        reviews = stage2_reviews(question, opinions, members, cfg)
-        log(f"[2/3] Done. Received {len(reviews)} reviews.")
-
-        if args.show_intermediate:
-            print("=== STAGE 2: PEER REVIEWS ===\n")
-            for r in reviews:
-                print(f"[Review by {r.provider}]")
-                print(r.raw_review)
-                print()
-
-        # Stage 3: chairman synthesis
-        log(f"[3/3] Asking chairman '{chairman}' to synthesize final answer ...")
-        final_answer = stage3_chairman(question, opinions, reviews, chairman, cfg)
-        log("[3/3] Final answer ready.\n")
+            for turn in run.turns:
+                _print_turn_summary(turn, turns)
 
         print("=== FINAL ANSWER ===\n")
-        print(final_answer)
+        print(run.turns[-1].chairman.answer if run.turns else "")
+
+        if args.show_turns:
+            _print_turn_overview(run)
 
     except ProviderError as e:
         print(f"Provider error:\n{e}", file=sys.stderr)
@@ -100,4 +177,3 @@ def main(argv: List[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

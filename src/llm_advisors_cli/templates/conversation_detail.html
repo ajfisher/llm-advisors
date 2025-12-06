@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0;">Conversation {{ conversation_id }}</h2>
+  <p style="color:var(--muted); margin-top:6px;">{{ meta.question }}</p>
+  <div style="margin-top:10px;">
+    <span class="pill">Members: {{ meta.members|join(", ") }}</span>
+    <span class="pill">Chairman: {{ meta.chairman }}</span>
+    <span class="pill">Turns: {{ meta.turns }}</span>
+    {% if meta.error %}
+      <span class="pill" style="background:#ffb3b3; color:#280000;">Error recorded</span>
+    {% endif %}
+  </div>
+</div>
+
+{% for turn in turns %}
+  <div class="card">
+    <h3 style="margin-top:0;">Turn {{ turn.turn_index }}</h3>
+    <p style="color:var(--muted);">Prompt used for this turn:</p>
+    <pre>{{ turn.turn_prompt }}</pre>
+
+    <h4>Advisor answers</h4>
+    {% for adv in turn.advisors %}
+      <details open>
+        <summary>{{ adv.provider }}</summary>
+        <pre>{{ adv.answer }}</pre>
+      </details>
+    {% endfor %}
+
+    <h4>Reviews</h4>
+    {% for rev in turn.reviews %}
+      <details>
+        <summary>{{ rev.provider }}</summary>
+        <pre>{{ rev.review }}</pre>
+      </details>
+    {% endfor %}
+
+    <h4>Chairman ({{ turn.chairman.provider }})</h4>
+    <pre>{{ turn.chairman.answer }}</pre>
+  </div>
+{% endfor %}
+
+{% if not turns %}
+  <div class="card">
+    <p style="color:var(--muted);">No turn data recorded.</p>
+  </div>
+{% endif %}
+{% endblock %}

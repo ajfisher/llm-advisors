@@ -56,7 +56,7 @@ def _merge_provider_config(name: str, cfg: AdvisorsConfig) -> ProviderConfig:
 
 def ask_codex(
     prompt: str,
-    cfg: CouncilConfig,
+    cfg: AdvisorsConfig,
     cwd: Optional[str] = None,
 ) -> ProviderResult:
     pcfg = _merge_provider_config("codex", cfg)
@@ -108,7 +108,7 @@ def ask_gemini(
 
 def ask_ollama(
     prompt: str,
-    cfg: CouncilConfig,
+    cfg: AdvisorsConfig,
     cwd: Optional[str] = None,
     model_override: Optional[str] = None,
 ) -> ProviderResult:
@@ -137,4 +137,3 @@ def get_provider_functions(cfg: AdvisorsConfig):
 
     # honour enabled = false in config
     return {name: fn for name, fn in fns.items() if cfg.providers.get(name, None) is None or cfg.providers[name].enabled}
-

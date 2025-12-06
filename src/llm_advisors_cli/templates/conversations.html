@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0;">Past conversations</h2>
+  {% if conversations %}
+    {% for conv in conversations %}
+      <div style="margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <a href="{{ url_for('conversation_detail', conversation_id=conv.id) }}" style="font-weight:700;">{{ conv.id }}</a>
+            <div style="color:var(--muted); font-size:14px;">{{ conv.meta.question }}</div>
+          </div>
+          <div class="pill">{{ conv.meta.created_at }}</div>
+        </div>
+        <div style="margin-top:6px;">
+          <span class="pill">Members: {{ conv.meta.members|join(", ") }}</span>
+          <span class="pill">Chairman: {{ conv.meta.chairman }}</span>
+          <span class="pill">Turns: {{ conv.meta.turns }}</span>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p style="color:var(--muted);">No conversations logged yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

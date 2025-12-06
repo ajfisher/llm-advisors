@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0;">Start a new conversation</h2>
+  <form action="{{ url_for('start_conversation') }}" method="post">
+    <label for="question">Question / prompt</label>
+    <textarea id="question" name="question" placeholder="What should the council discuss?">{{ request.form.question or "" }}</textarea>
+
+    <div class="grid">
+      <div>
+        <label>Members</label>
+        {% for member in members %}
+        <div style="margin-bottom:6px;">
+          <input type="checkbox" id="member-{{ loop.index }}" name="members" value="{{ member }}"
+            {% if member in default_members %}checked{% endif %}>
+          <label for="member-{{ loop.index }}" style="display:inline;">{{ member }}</label>
+        </div>
+        {% endfor %}
+      </div>
+      <div>
+        <label for="chairman">Chairman</label>
+        <select id="chairman" name="chairman">
+          {% for member in members %}
+          <option value="{{ member }}" {% if member == default_chairman %}selected{% endif %}>{{ member }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="turns">Turns</label>
+        <input id="turns" name="turns" type="number" min="1" value="{{ default_turns }}">
+      </div>
+    </div>
+
+    <button class="btn" type="submit">Start conversation</button>
+  </form>
+</div>
+{% endblock %}
