@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}" python3 -m llm_advisors_cli.cli "$@"

@@ -1,2 +1,146 @@
 # llm-advisors
-Council of advisors using existing tooling
+
+A small CLI that lets you run a "council of LLMs as advisors" using:
+
+- Codex (OpenAI CLI)
+- Claude Code
+- Gemini CLI
+- Ollama (local models)
+
+It **does not** use any extra API keys – it shells out to the official CLIs, which
+authenticate using your existing subscriptions/accounts, and to Ollama for local models.
+
+Vibe coded in an afternoon with codex.
+
+The behaviour is inspired by Karpathy’s [llm-council](https://github.com/karpathy/llm-council),
+but instead of going via OpenRouter/API keys, it coordinates multiple CLIs you already use.
+
+## 1. What it does
+
+Given a question/prompt, `llm-advisors`:
+
+1. **Stage 1 – first opinions**
+   Sends the prompt to each configured provider and collects all answers.
+
+2. **Stage 2 – peer review**
+   Builds a review prompt containing the original question and all answers (labelled A/B/C/…).
+   Each provider gets this prompt and returns a review/ranking and an improved answer.
+
+3. **Stage 3 – chairman synthesis**
+   A selected “chairman” provider gets:
+   - the original question
+   - all first-round answers
+   - all reviews
+   and produces a single final answer plus some notes.
+
+All the coordination logic lives in this repo. The actual inference is done by
+the CLIs and Ollama.
+
+---
+
+## 2. Requirements
+
+You’ll need:
+
+- **Python**: 3.11 or newer
+- A working install of the following CLIs (pick the ones you care about):
+  - `codex` (OpenAI / ChatGPT CLI)
+  - `claude` (Claude Code CLI)
+  - `gemini` (Gemini CLI)
+  - `ollama` (local LLM runtime)
+
+Each CLI must already be:
+
+- Installed on your `$PATH`
+- Logged in / configured to use whatever account or plan you have
+- Working from the shell by itself (e.g. `codex "hello"`, `claude -p "hello"`,
+    `gemini -p "hello"`, `ollama run llama3.2 "hello"`)
+
+For Ollama, you’ll also need at least one model pulled, for example:
+
+```bash
+ollama pull llama3.2
+```
+
+## 3. Install
+
+Clone the repo and install it locally (creates the `llm-advisors` entry point):
+
+```bash
+pip install -e .
+# or
+python -m pip install -e .
+```
+
+You can also invoke it from the repo root without installing
+via `./llm-advisors "<question>"`, but the editable install is friendlier for
+PATH access.
+
+## 4. Usage
+
+Ask the advisors a question:
+
+```bash
+llm-advisors "When should I use vector search vs full text search?"
+```
+
+Useful flags:
+
+- `--members`: override which providers answer/review (defaults to config).
+    Accepts `codex claude gemini ollama` and Ollama model overrides
+    like `ollama/llama3.1:8b`.
+- `--chairman`: choose who synthesises the final answer (defaults to config).
+- `--show-intermediate`: print stage 1 answers and stage 2 reviews before the
+    final answer.
+
+Examples:
+
+```bash
+# Ask only Codex and Claude, use Claude to chair
+llm-advisors --members codex claude --chairman claude "How do I debounce an async function?"
+
+# Ask two specific Ollama models and Codex, show intermediate output
+llm-advisors --members ollama/llama3.1:8b ollama/qwen2.5 codex --chairman codex --show-intermediate "Summarise the latest Rust release notes"
+```
+
+If a provider CLI fails, you’ll see a `ProviderError` with the CLI exit code
+and stderr – fix the underlying CLI and rerun, or disable that provider
+(see config below).
+
+## 5. Configuration
+
+Configuration is optional. Defaults live in code (`codex`, `claude`, `gemini`,
+`ollama` as members; `codex` as chairman). If present, config is read from:
+
+`~/.config/llm_advisors/config.toml`
+
+Structure:
+
+```toml
+[general]
+# order matters for labelling A/B/C/…
+members = ["codex", "claude", "gemini", "ollama/llama3.2"]
+# who synthesises the final answer
+chairman = "claude"
+
+[providers.codex]
+enabled = true                      # set false to skip entirely
+command = "codex"                   # override the binary name/path
+extra_args = ["--no-color"]         # appended before the prompt
+
+[providers.claude]
+enabled = true
+extra_args = ["-p"]                 # defaults used if not provided
+
+[providers.gemini]
+enabled = false                     # example of disabling one provider
+
+[providers.ollama]
+model = "llama3.2"                  # default model when using bare `ollama`
+extra_args = []                     # e.g. ["--timeout", "60"]
+```
+
+Runtime flags always win over config values. To use a specific Ollama model
+once, pass `--members ollama/llama3.1:8b` (or set `chairman` to `ollama/…`).
+You can also point `command` to a mock script if you want to stub providers
+during development.

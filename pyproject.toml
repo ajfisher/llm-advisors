@@ -1,0 +1,18 @@
+[project]
+name = "llm-advisors-cli"
+version = "0.1.0"
+description = "Local LLM advisors using Codex, Claude Code, Gemini CLI and Ollama"
+authors = [
+  { name = "ajfisher", email = "ajfisher.td@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+llm-advisors = "llm_advisors_cli.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
