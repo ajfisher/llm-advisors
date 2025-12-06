@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -171,3 +172,39 @@ def get_provider_functions(cfg: AdvisorsConfig):
         for name, fn in fns.items()
         if cfg.providers.get(name, None) is None or cfg.providers[name].enabled
     }
+
+
+def discover_ollama_models(cfg: AdvisorsConfig) -> List[str]:
+    """Return a list of available ollama model names (no 'ollama/' prefix)."""
+    pcfg = cfg.providers.get("ollama", ProviderConfig(name="ollama"))
+    cmd = [pcfg.command or "ollama", "list", "--format", "json"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(out.stdout or "[]")
+        models: List[str] = []
+        if isinstance(data, list):
+            for item in data:
+                name = item.get("name") if isinstance(item, dict) else None
+                if isinstance(name, str):
+                    models.append(name)
+        if models:
+            return models
+    except Exception:
+        # fallback to text parsing below
+        pass
+
+    # Text fallback: first column of `ollama list`
+    fallback_cmd = [pcfg.command or "ollama", "list"]
+    try:
+        out = subprocess.run(fallback_cmd, capture_output=True, text=True, check=True)
+        lines = (out.stdout or "").strip().splitlines()
+        models: List[str] = []
+        for line in lines:
+            if not line or line.lower().startswith("name"):
+                continue
+            parts = line.split()
+            if parts:
+                models.append(parts[0])
+        return models
+    except Exception:
+        return []

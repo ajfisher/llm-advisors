@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from .advisors import ProgressEvent
 from .config import AdvisorsConfig, ProviderParallelismConfig, load_config
 from .conversation import ConversationRun, run_conversation
+from .providers import discover_ollama_models
 from .exceptions import ProviderError
 
 
@@ -79,6 +80,9 @@ class CLIProgressRenderer:
 
 
 def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.Namespace:
+    # Discover ollama models for better defaults
+    ollama_models = discover_ollama_models(cfg)
+
     parser = argparse.ArgumentParser(
         prog="llm-advisors",
         description="Multi-model advisors using Codex, Claude Code, Gemini CLI and Ollama",
@@ -92,7 +96,7 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
     parser.add_argument(
         "--members",
         nargs="+",
-        default=cfg.members,
+        default=_default_members(cfg, ollama_models),
         help=(
             "Council members (default from config). "
             "Options: codex claude gemini ollama or ollama/<model> "
@@ -172,6 +176,19 @@ def _apply_cli_overrides(cfg: AdvisorsConfig, args: argparse.Namespace) -> Advis
         cfg.logging.enabled = False
 
     return cfg
+
+
+def _default_members(cfg: AdvisorsConfig, ollama_models: List[str]) -> List[str]:
+    members: List[str] = []
+    for m in cfg.members:
+        if m == "ollama":
+            if ollama_models:
+                members.extend([f"ollama/{model}" for model in ollama_models])
+            else:
+                members.append("ollama")
+        else:
+            members.append(m)
+    return members
 
 
 def _print_turn_summary(turn, total_turns: int) -> None:

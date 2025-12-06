@@ -11,6 +11,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, url
 from .advisors import ProgressEvent
 from .config import AdvisorsConfig, load_config
 from .conversation import generate_conversation_id, run_conversation
+from .providers import discover_ollama_models
 
 app = Flask(__name__)
 app.secret_key = "llm-advisors"
@@ -126,14 +127,22 @@ jobs: Dict[str, ConversationJob] = {}
 
 
 def _available_members(cfg: AdvisorsConfig) -> List[str]:
-    options = {"codex", "claude", "gemini", "ollama"}
-    options.update(cfg.members)
-    options.add(cfg.chairman)
-    for name, pcfg in cfg.providers.items():
-        if name == "ollama" and pcfg.model:
-            options.add(f"ollama/{pcfg.model}")
-        else:
+    options = {"codex", "claude", "gemini"}
+    options.update([m for m in cfg.members if not m.startswith("ollama/") and m != "ollama"])
+    options.update([cfg.chairman] if cfg.chairman not in ("ollama",) else [])
+
+    # Dynamically discover Ollama models and add as ollama/<model>
+    ollama_models = discover_ollama_models(cfg)
+    for model in ollama_models:
+        options.add(f"ollama/{model}")
+
+    # Honour explicitly configured ollama/<model> entries
+    for name in cfg.members:
+        if name.startswith("ollama/"):
             options.add(name)
+    if cfg.chairman.startswith("ollama/"):
+        options.add(cfg.chairman)
+
     return sorted(options)
 
 
