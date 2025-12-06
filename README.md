@@ -133,7 +133,8 @@ python -m llm_advisors_cli.web
 ```
 
 It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
-members/chairman/turns, and browse past runs from `conversations/`.
+members/chairman/turns, watch live per-member status (with a stop control),
+and browse/delete past runs from `conversations/`.
 
 ## 5. Configuration
 
