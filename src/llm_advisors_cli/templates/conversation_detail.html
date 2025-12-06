@@ -46,6 +46,24 @@
   </div>
 </div>
 
+<div class="card">
+  <h3 style="margin-top:0;">Live answers</h3>
+  <div class="grid">
+    <div>
+      <h4>Advisor responses</h4>
+      <div id="stage1-output"></div>
+    </div>
+    <div>
+      <h4>Peer reviews</h4>
+      <div id="stage2-output"></div>
+    </div>
+    <div>
+      <h4>Chairman</h4>
+      <div id="stage3-output"></div>
+    </div>
+  </div>
+</div>
+
 {% for turn in turns %}
   <div class="card">
     <h3 style="margin-top:0;">Turn {{ turn.turn_index }}</h3>
@@ -96,7 +114,8 @@
       container.innerHTML = "<p style='color:var(--muted);'>No data yet.</p>";
       return;
     }
-    entries.forEach(([provider, status]) => {
+    entries.forEach(([provider, statusData]) => {
+      const status = typeof statusData === "string" ? statusData : statusData.status;
       const row = document.createElement("div");
       row.style.display = "flex";
       row.style.justifyContent = "space-between";
@@ -104,6 +123,24 @@
       row.style.marginBottom = "4px";
       row.innerHTML = `<span>${provider}</span><span class="status ${status}">${status}</span>`;
       container.appendChild(row);
+    });
+  }
+
+  function renderOutput(containerId, mapping) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    const entries = Object.entries(mapping || {});
+    if (!entries.length) {
+      container.innerHTML = "<p style='color:var(--muted);'>No data yet.</p>";
+      return;
+    }
+    entries.forEach(([provider, data]) => {
+      const message = typeof data === "object" ? data.message : "";
+      if (!message) return;
+      const block = document.createElement("div");
+      block.style.marginBottom = "8px";
+      block.innerHTML = `<div style="font-weight:700; margin-bottom:4px;">${provider}</div><pre>${message}</pre>`;
+      container.appendChild(block);
     });
   }
 
@@ -115,6 +152,9 @@
     renderStage("stage1-status", data.stage1 || {});
     renderStage("stage2-status", data.stage2 || {});
     renderStage("stage3-status", data.stage3 || {});
+    renderOutput("stage1-output", data.stage1 || {});
+    renderOutput("stage2-output", data.stage2 || {});
+    renderOutput("stage3-output", data.stage3 || {});
 
     if (jobStatus === "running") {
       stopBtn.style.display = "inline-block";

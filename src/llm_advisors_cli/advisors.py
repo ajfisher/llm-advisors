@@ -160,6 +160,7 @@ async def _call_provider_async(
                 stage=stage,
                 provider=name,
                 status="done",
+                message=getattr(res, "answer", None),
             )
         )
 

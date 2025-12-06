@@ -27,7 +27,7 @@ class ProgressState:
         self.turn = 1
         self.status = "running"
         self.messages: Dict[str, str] = {}
-        self.stage_status: Dict[tuple[int, str, str], str] = {}
+        self.stage_status: Dict[tuple[int, str, str], Dict[str, str]] = {}
         self._init_turn(self.turn)
 
     def _providers_for_stage(self, stage: str) -> List[str]:
@@ -40,7 +40,7 @@ class ProgressState:
     def _init_turn(self, turn: int) -> None:
         for stage in ("stage1", "stage2", "stage3"):
             for provider in self._providers_for_stage(stage):
-                self.stage_status[(turn, stage, provider)] = "pending"
+                self.stage_status[(turn, stage, provider)] = {"status": "pending"}
 
     def handle(self, event: ProgressEvent) -> None:
         if event.event == "turn" and event.status == "start":
@@ -48,7 +48,10 @@ class ProgressState:
             self._init_turn(event.turn)
         elif event.event == "provider" and event.provider:
             key = (event.turn, event.stage, event.provider)
-            self.stage_status[key] = event.status or "pending"
+            self.stage_status[key] = {
+                "status": event.status or "pending",
+                "message": event.message,
+            }
             if event.message:
                 self.messages[f"{event.stage}:{event.provider}"] = event.message
         elif event.event == "conversation":
@@ -58,7 +61,7 @@ class ProgressState:
         def stage_map(stage: str) -> Dict[str, str]:
             return {
                 provider: self.stage_status.get(
-                    (self.turn, stage, provider), "pending"
+                    (self.turn, stage, provider), {"status": "pending"}
                 )
                 for provider in self._providers_for_stage(stage)
             }
@@ -256,9 +259,9 @@ def conversation_status(conversation_id: str):
     if meta:
         members = meta.get("members", [])
         chairman = meta.get("chairman", "")
-        stage1 = {m: "done" for m in members}
-        stage2 = {m: "done" for m in members}
-        stage3 = {chairman: "done"} if chairman else {}
+        stage1 = {m: {"status": "done"} for m in members}
+        stage2 = {m: {"status": "done"} for m in members}
+        stage3 = {chairman: {"status": "done"}} if chairman else {}
         status_val = "error" if meta.get("error") else "done"
         return jsonify(
             {
