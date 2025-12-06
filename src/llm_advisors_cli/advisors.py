@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from .config import AdvisorsConfig, ProviderParallelismConfig
@@ -17,6 +17,7 @@ class AdvisorCall:
     prompt: str
     answer: str
     meta: Dict[str, Any]
+    role: Optional[str] = None
 
 
 @dataclass
@@ -295,16 +296,19 @@ async def stage1_first_opinions_async(
     cancel_event: Optional[asyncio.Event] = None,
     progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
     turn_index: int = 1,
+    prompts_by_provider: Optional[Dict[str, str]] = None,
+    roles: Optional[Dict[str, str]] = None,
 ) -> List[AdvisorCall]:
     tasks: List[tuple[int, asyncio.Task[ProviderResult]]] = []
 
     for idx, name in enumerate(member_names):
         if log_progress:
             alog(f"  - [stage1] asking {name} ...")
+        prompt = (prompts_by_provider or {}).get(name, question)
         task = asyncio.create_task(
             _call_provider_async(
                 name,
-                question,
+                prompt,
                 cfg,
                 limiter,
                 cancel_event=cancel_event,
@@ -320,9 +324,10 @@ async def stage1_first_opinions_async(
         res = await task
         ordered_results[idx] = AdvisorCall(
             provider=res.provider,
-            prompt=question,
+            prompt=prompt,
             answer=res.answer,
             meta=res.meta,
+            role=(roles or {}).get(res.provider),
         )
         if log_progress:
             alog(f"  - [stage1] {res.provider} done.")
@@ -341,8 +346,9 @@ async def stage2_reviews_async(
     cancel_event: Optional[asyncio.Event] = None,
     progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
     turn_index: int = 1,
+    review_prompt_override: Optional[str] = None,
 ) -> List[ReviewCall]:
-    review_prompt = _build_review_prompt(question, opinions)
+    review_prompt = review_prompt_override or _build_review_prompt(question, opinions)
     tasks: List[tuple[int, asyncio.Task[ProviderResult]]] = []
 
     for idx, name in enumerate(reviewer_names):
@@ -388,8 +394,9 @@ async def stage3_chairman_async(
     cancel_event: Optional[asyncio.Event] = None,
     progress_handler: Optional[Callable[[ProgressEvent], None]] = None,
     turn_index: int = 1,
+    chairman_prompt_override: Optional[str] = None,
 ) -> ChairmanCall:
-    prompt = _build_chairman_prompt(question, opinions, reviews)
+    prompt = chairman_prompt_override or _build_chairman_prompt(question, opinions, reviews)
     if log_progress:
         alog(f"  - [stage3] asking chairman '{chairman}' ...")
     res = await _call_provider_async(
@@ -415,3 +422,8 @@ class TurnRecord:
     reviews: List[ReviewCall]
     chairman: ChairmanCall
     turn_prompt: str
+    kind: str = "baseline"
+    roles: Dict[str, str] = field(default_factory=dict)
+    summary_object: Optional[Dict[str, Any]] = None
+    task_object: Optional[Dict[str, Any]] = None
+    convergence_prep: Optional[Dict[str, Any]] = None

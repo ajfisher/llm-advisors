@@ -226,7 +226,9 @@ def main(argv: List[str] | None = None) -> None:
     question = " ".join(args.question)
     members = args.members
     chairman = args.chairman
-    turns = max(1, args.turns)
+    if args.turns > 4:
+        log("Requested turns exceed 4; capping at 4 per protocol.")
+    turns = max(1, min(args.turns, 4))
 
     renderer = CLIProgressRenderer(members, chairman, turns)
 
