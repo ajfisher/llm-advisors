@@ -92,6 +92,8 @@ Tasks:
    - clarity
 3. Then propose your own improved answer, labelled "FINAL".
 
+In your response, prioritise brevity and clarity over feature count.
+
 Respond in this format:
 
 CRITIQUES:
@@ -180,6 +182,7 @@ Here are the peer reviews and rankings from each member:
 Task:
 Synthesize a single best possible answer to the question, using the
 strongest parts of the above. Resolve disagreements explicitly where relevant.
+Strive for brevity and clarity in your response rather than extensiveness.
 
 Structure your response as:
 
