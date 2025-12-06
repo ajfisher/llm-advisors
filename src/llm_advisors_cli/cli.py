@@ -29,12 +29,19 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         "--members",
         nargs="+",
         default=cfg.members,
-        help="Advisory members (default from config). Options: codex claude gemini ollama",
+        help=(
+            "Council members (default from config). "
+            "Options: codex claude gemini ollama or ollama/<model> "
+            "e.g. 'ollama/llama3.1:8b'"
+        ),
     )
     parser.add_argument(
         "--chairman",
         default=cfg.chairman,
-        help="Chairman provider for final synthesis (default from config).",
+        help=(
+            "Chairman provider for final synthesis (default from config). "
+            "Can be codex, claude, gemini, ollama or ollama/<model>."
+        ),
     )
     parser.add_argument(
         "--show-intermediate",

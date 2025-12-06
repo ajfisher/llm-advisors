@@ -108,16 +108,17 @@ def ask_gemini(
 
 def ask_ollama(
     prompt: str,
-    cfg: AdvisorsConfig,
+    cfg: CouncilConfig,
     cwd: Optional[str] = None,
+    model_override: Optional[str] = None,
 ) -> ProviderResult:
     pcfg = _merge_provider_config("ollama", cfg)
-    model = pcfg.model or "llama3.1:8b"
+    model = model_override or pcfg.model or "llama3.2"
     cmd = [pcfg.command or "ollama", "run", model]
     cmd.extend(pcfg.extra_args or [])
     cmd.append(prompt)
     answer = _run_cmd("ollama", cmd, cwd=cwd)
-    return ProviderResult(f"ollama:{model}", answer, {"model": model})
+    return ProviderResult(f"ollama/{model}", answer, {"model": model})
 
 
 # registry
