@@ -116,8 +116,13 @@ and stderr – fix the underlying CLI and rerun, or disable that provider
 
 ### Multi-turn and artefacts
 
-- `--turns N` runs N council rounds. Each round includes the previous chairman
-  answer as context.
+- `--turns N` runs up to 4 structured turns:
+  - 1 turn: baseline synthesis
+  - 2 turns: baseline → final convergence
+  - 3 turns: baseline → divergence → final convergence
+  - 4 turns: baseline → divergence → task solving → final convergence
+- Post-baseline turns assign rotating roles (Explorer/Skeptic/etc.) to push divergence.
+- Structured artefacts (summaries, task sheets, convergence prep) feed each turn.
 - Every run gets a conversation ID. Artefacts live under `conversations/<id>/`
   as `meta.json` plus `turn-01.json`, `turn-02.json`, etc. Disable with
   `--log-disabled`.
