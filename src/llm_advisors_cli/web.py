@@ -12,6 +12,7 @@ from .advisors import ProgressEvent
 from .config import AdvisorsConfig, load_config
 from .conversation import generate_conversation_id, run_conversation
 from .providers import discover_ollama_models
+import markdown
 
 app = Flask(__name__)
 app.secret_key = "llm-advisors"
@@ -240,6 +241,9 @@ def conversation_detail(conversation_id: str):
     members = meta["members"] if meta else (job.members if job else [])
     chairman = meta["chairman"] if meta else (job.chairman if job else "")
     turns_count = meta["turns"] if meta else (job.turns if job else 0)
+    final_answer_html = None
+    if turns:
+        final_answer_html = markdown.markdown(turns[-1]["chairman"]["answer"], extensions=["extra", "sane_lists"])
 
     return render_template(
         "conversation_detail.html",
@@ -251,6 +255,7 @@ def conversation_detail(conversation_id: str):
         members=members,
         chairman=chairman,
         turns_count=turns_count,
+        final_answer_html=final_answer_html,
     )
 
 
