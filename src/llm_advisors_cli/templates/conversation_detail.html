@@ -16,10 +16,19 @@
   </div>
   <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
     <form method="post" action="{{ url_for('delete_conversation', conversation_id=conversation_id) }}">
-      <button class="btn" type="submit" style="background:#ffb3b3;">Delete conversation</button>
+      <button class="btn" type="submit" style="background:var(--mars-clay);">Delete conversation</button>
     </form>
   </div>
 </div>
+
+{% if final_answer_html %}
+<div class="card">
+  <h3 style="margin-top:0;">Final answer (chairman)</h3>
+  <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:12px;">
+    {{ final_answer_html|safe }}
+  </div>
+</div>
+{% endif %}
 
 <div class="card" id="live-card">
   <div style="display:flex; justify-content:space-between; align-items:center;">
