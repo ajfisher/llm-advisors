@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -168,24 +169,40 @@ async def _call_provider_async(
     return res
 
 
-def _build_review_prompt(question: str, opinions: List[AdvisorCall]) -> str:
+def _build_review_prompt(
+    question: str,
+    opinions: List[AdvisorCall],
+    *,
+    context: Optional[str] = None,
+) -> str:
+    shuffled = list(opinions)
+    random.shuffle(shuffled)
+
     labelled = []
-    for idx, res in enumerate(opinions):
+    for idx, res in enumerate(shuffled):
         label = chr(ord("A") + idx)
         labelled.append(f"{label}) {res.answer}")
 
     opinions_block = "\n\n".join(labelled)
 
-    return f"""
+    base = f"""
 You are part of an expert panel answering a question.
 
 Question:
 {question}
 
-Here are the panel's answers (labelled A, B, C, ...). You don't know who wrote which.
+Here are the panel's answers (labelled A, B, C, ...). Treat them as anonymous.
+Do NOT guess authorship. Do NOT favour any answer because you think it is yours.
+Judge purely on quality and usefulness.
 
 {opinions_block}
+"""
 
+    if context:
+        base += f"\n\nContext:\n{context}\n"
+
+    return f"""
+{base}
 Tasks:
 1. Briefly critique each answer (A, B, C, ...).
 2. Rank the answers from best to worst in terms of:

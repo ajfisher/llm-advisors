@@ -181,19 +181,23 @@ def _build_review_prompt(
     *,
     context: Optional[str] = None,
 ) -> str:
+    shuffled = list(opinions)
+    random.shuffle(shuffled)
+
     labelled = []
-    for idx, res in enumerate(opinions):
+    for idx, res in enumerate(shuffled):
         label = chr(ord("A") + idx)
-        title = f"{label}) [{res.provider}]"
-        labelled.append(f"{title}\n{res.answer}")
+        labelled.append(f"{label})\n{res.answer}")
     opinions_block = "\n\n".join(labelled)
 
     base = f"""
 Question:
 {base_question}
 
-Advisor answers (labelled A, B, C...):
+Advisor answers (labelled A, B, C...) presented anonymously:
 {opinions_block}
+
+You do not know who wrote which. Do not guess or infer authorship. Judge purely on quality and usefulness.
 """
 
     if context:
