@@ -1,40 +1,40 @@
 # llm-advisors
 
-A small CLI that lets you run a "council of LLMs as advisors" using:
+A small CLI and web app that lets you run a "board of LLMs as advisors" using:
 
 - Codex (OpenAI CLI)
 - Claude Code
 - Gemini CLI
 - Ollama (local models)
 
-It **does not** use any extra API keys – it shells out to the official CLIs, which
-authenticate using your existing subscriptions/accounts, and to Ollama for local models.
+It **does not** use any extra API keys – it shells out to the official CLIs,
+which authenticate using your existing subscriptions/accounts, and to Ollama
+for local models.
 
 Vibe coded in an afternoon with codex.
 
-The behaviour is inspired by Karpathy’s [llm-council](https://github.com/karpathy/llm-council),
-but instead of going via OpenRouter/API keys, it coordinates multiple CLIs you already use.
+The behaviour is inspired by Karpathy’s
+[llm-council](https://github.com/karpathy/llm-council), but instead of going
+via OpenRouter/API keys, it coordinates multiple CLIs you already use.
 
 ## 1. What it does
 
-Given a question/prompt, `llm-advisors`:
+Run a structured, multi-turn “council” of LLMs via the CLIs you already have.
+It shells out to Codex/Claude/Gemini/Ollama and orchestrates up to 4 turns:
 
-1. **Stage 1 – first opinions**
-   Sends the prompt to each configured provider and collects all answers.
+- **Turn 1 – baseline**: advisors answer freely; chairman synthesises and
+  produces a summary object.
+- **Turn 2 – divergence**: advisors get roles (Explorer/Skeptic/etc.) and push
+  new ideas; chairman produces a task sheet.
+- **Turn 3 – task solving**: advisors solve the task sheet; chairman builds a
+  convergence-prep summary.
+- **Turn 4 – convergence**: advisors propose finals; chairman produces the
+  final answer.
 
-2. **Stage 2 – peer review**
-   Builds a review prompt containing the original question and all answers (labelled A/B/C/…).
-   Each provider gets this prompt and returns a review/ranking and an improved answer.
-
-3. **Stage 3 – chairman synthesis**
-   A selected “chairman” provider gets:
-   - the original question
-   - all first-round answers
-   - all reviews
-   and produces a single final answer plus some notes.
-
-All the coordination logic lives in this repo. The actual inference is done by
-the CLIs and Ollama.
+Roles rotate after turn 1 to avoid stagnation. All prompts/results are logged
+per conversation; the web UI shows live status and stores artefacts for later
+review. Ollama models on your machine are discovered automatically for
+selection in the web UI.
 
 ---
 
@@ -54,7 +54,7 @@ Each CLI must already be:
 - Installed on your `$PATH`
 - Logged in / configured to use whatever account or plan you have
 - Working from the shell by itself (e.g. `codex "hello"`, `claude -p "hello"`,
-    `gemini -p "hello"`, `ollama run llama3.2 "hello"`)
+  `gemini -p "hello"`, `ollama run llama3.2 "hello"`)
 
 For Ollama, you’ll also need at least one model pulled, for example:
 
@@ -62,19 +62,19 @@ For Ollama, you’ll also need at least one model pulled, for example:
 ollama pull llama3.2
 ```
 
-## 3. Install
+## 3. Install (with venv)
 
-Clone the repo and install it locally (creates the `llm-advisors` entry point):
+Use a virtual environment so dependencies stay contained:
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
-# or
-python -m pip install -e .
 ```
 
-You can also invoke it from the repo root without installing
-via `./llm-advisors "<question>"`, but the editable install is friendlier for
-PATH access.
+You can also invoke it from the repo root without installing via
+`./llm-advisors "<question>"`, but the editable install inside a venv keeps
+your global Python clean.
 
 ## 4. Usage
 
@@ -87,32 +87,36 @@ llm-advisors "When should I use vector search vs full text search?"
 Useful flags:
 
 - `--members`: override which providers answer/review (defaults to config).
-    Accepts `codex claude gemini ollama` and Ollama model overrides
-    like `ollama/llama3.1:8b`.
+  Accepts `codex claude gemini ollama` and Ollama model overrides like
+  `ollama/llama3.1:8b`.
 - `--chairman`: choose who synthesises the final answer (defaults to config).
 - `--turns`: run multiple council rounds (opinions → reviews → chairman) and
-    feed the last chairman answer into the next turn.
-- `--show-intermediate`: print stage 1 answers and stage 2 reviews for each turn.
+  feed the last chairman answer into the next turn.
+- `--show-intermediate`: print stage 1 answers and stage 2 reviews for each
+  turn.
 - `--show-turns`: print a short summary per turn after the final answer.
 - `--max-parallel`: global max concurrent provider calls (default 4).
 - `--ollama-parallel-mode`: `sequential` (default) | `limited` | `parallel`.
 - `--ollama-max-parallel`: when mode=`limited`, how many Ollama calls to allow.
-- `--log-dir`: where to write conversation artefacts (default `conversations/`).
+- `--log-dir`: where to write conversation artefacts (default
+  `conversations/`).
 - `--log-disabled`: skip writing artefacts.
 
 Examples:
 
 ```bash
 # Ask only Codex and Claude, use Claude to chair
-llm-advisors --members codex claude --chairman claude "How do I debounce an async function?"
+llm-advisors --members codex claude \
+    --chairman claude "How do I debounce an async function?"
 
 # Ask two specific Ollama models and Codex, show intermediate output
-llm-advisors --members ollama/llama3.1:8b ollama/qwen2.5 codex --chairman codex --show-intermediate "Summarise the latest Rust release notes"
+llm-advisors --members ollama/llama3.1:8b ollama/qwen2.5 codex \
+    --chairman codex --show-intermediate "How does a vector work?"
 ```
 
 If a provider CLI fails, you’ll see a `ProviderError` with the CLI exit code
-and stderr – fix the underlying CLI and rerun, or disable that provider
-(see config below).
+and stderr - fix the underlying CLI and rerun, or disable that provider (see
+config below).
 
 ### Multi-turn and artefacts
 
@@ -121,8 +125,10 @@ and stderr – fix the underlying CLI and rerun, or disable that provider
   - 2 turns: baseline → final convergence
   - 3 turns: baseline → divergence → final convergence
   - 4 turns: baseline → divergence → task solving → final convergence
-- Post-baseline turns assign rotating roles (Explorer/Skeptic/etc.) to push divergence.
-- Structured artefacts (summaries, task sheets, convergence prep) feed each turn.
+- Post-baseline turns assign rotating roles (Explorer/Skeptic/etc.) to push
+  divergence.
+- Structured artefacts (summaries, task sheets, convergence prep) feed each
+  turn.
 - Every run gets a conversation ID. Artefacts live under `conversations/<id>/`
   as `meta.json` plus `turn-01.json`, `turn-02.json`, etc. Disable with
   `--log-disabled`.
@@ -133,13 +139,30 @@ A minimal local UI is available:
 
 ```bash
 llm-advisors-web
+
 # or
+
 python -m llm_advisors_cli.web
 ```
 
 It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
-members/chairman/turns, watch live per-member status (with a stop control),
-and browse/delete past runs from `conversations/`.
+members/chairman/turns, watch live per-member status (with a stop control), and
+browse/delete past runs from `conversations/`. Ollama models installed locally
+are auto-discovered and shown as `ollama/<model>` options.
+
+### Screenshots
+
+Home / start page (question, advisors, turn slider):
+
+![Home screen](assets/home.png)
+
+Live status during a run (roles + per-member progress):
+
+![Live status](assets/live.png)
+
+Conversation detail with final answer plus turn artefacts:
+
+![Conversation detail](assets/conversation.png)
 
 ## 5. Configuration
 
@@ -152,11 +175,11 @@ Structure:
 
 ```toml
 [general]
-# order matters for labelling A/B/C/…
-members = ["codex", "claude", "gemini", "ollama/llama3.2"]
+# order matters for labelling A/B/C/… 
+members = ["codex", "claude", "gemini", "ollama/llama3.2"] 
+
 # who synthesises the final answer
-chairman = "claude"
-max_parallel = 4
+chairman = "claude" max_parallel = 4
 
 [providers.codex]
 enabled = true                      # set false to skip entirely
