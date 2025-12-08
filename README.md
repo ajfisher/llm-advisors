@@ -36,6 +36,10 @@ per conversation; the web UI shows live status and stores artefacts for later
 review. Ollama models on your machine are discovered automatically for
 selection in the web UI.
 
+[![Screenshot of LLM Advisors](https://img.youtube.com/vi/7Xft86ihGfs/0.jpg)](https://www.youtube.com/watch?v=7Xft86ihGfs)
+
+https://youtu.be/7Xft86ihGfs
+
 ---
 
 ## 2. Requirements
