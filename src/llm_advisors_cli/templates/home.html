@@ -28,10 +28,11 @@
         <label for="turns">Turns (1-4)</label>
         <input id="turns" name="turns" type="range" min="1" max="4" step="1" value="{{ default_turns }}" oninput="turnValue.textContent = this.value">
         <div style="color: var(--dark-matter); font-size:14px;">Selected: <span id="turnValue">{{ default_turns }}</span></div>
+
+        <p><button class="btn" type="submit" id="start-btn">Start conversation</button></p>
       </div>
     </div>
 
-    <button class="btn" type="submit" id="start-btn">Start conversation</button>
   </form>
 </div>
 <script>
