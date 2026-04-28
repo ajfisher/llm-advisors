@@ -102,7 +102,8 @@ Useful flags:
 - `--show-turns`: print a short summary per turn after the final answer.
 - `--max-parallel`: global max concurrent provider calls (default 4).
 - `--no-thinking`: prefer faster direct responses by lowering/disabling model
-  thinking where the provider CLI supports it.
+  thinking where the provider CLI supports it. Gemini is run in JSON output mode
+  and uses known no-thinking aliases where available.
 - `--ollama-parallel-mode`: `sequential` (default) | `limited` | `parallel`.
 - `--ollama-max-parallel`: when mode=`limited`, how many Ollama calls to allow.
 - `--log-dir`: where to write conversation artefacts (default
