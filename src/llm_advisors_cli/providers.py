@@ -11,6 +11,9 @@ from .config import AdvisorsConfig, ProviderConfig
 from .exceptions import ProviderError
 
 
+DEFAULT_CODEX_MODEL = "gpt-5.5"
+
+
 @dataclass
 class ProviderResult:
     provider: str
@@ -70,7 +73,10 @@ async def _run_cmd_async(
 
 
 def _merge_provider_config(name: str, cfg: AdvisorsConfig) -> ProviderConfig:
-    base = ProviderConfig(name=name)
+    base = ProviderConfig(
+        name=name,
+        model=DEFAULT_CODEX_MODEL if name == "codex" else None,
+    )
     override = cfg.providers.get(name)
     if not override:
         return base
@@ -95,7 +101,7 @@ async def ask_codex(
     # Base command: codex exec ...
     cmd = [pcfg.command or "codex", "exec"]
 
-    # Optional model from config.toml
+    # Default model, overridable via config.toml
     if pcfg.model:
         cmd.extend(["-m", pcfg.model])
 

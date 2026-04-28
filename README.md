@@ -183,11 +183,13 @@ Structure:
 members = ["codex", "claude", "gemini", "ollama/llama3.2"] 
 
 # who synthesises the final answer
-chairman = "claude" max_parallel = 4
+chairman = "claude"
+max_parallel = 4
 
 [providers.codex]
 enabled = true                      # set false to skip entirely
 command = "codex"                   # override the binary name/path
+model = "gpt-5.5"                   # default Codex model
 extra_args = ["--no-color"]         # appended before the prompt
 
 [providers.claude]
