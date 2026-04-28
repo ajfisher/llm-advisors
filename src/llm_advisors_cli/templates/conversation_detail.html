@@ -60,15 +60,15 @@
   <div class="grid">
     <div>
       <h4>Advisor responses</h4>
-      <div id="stage1-output"></div>
+      <div class="response-list" id="stage1-output"></div>
     </div>
     <div>
       <h4>Peer reviews</h4>
-      <div id="stage2-output"></div>
+      <div class="response-list" id="stage2-output"></div>
     </div>
     <div>
       <h4>Chair</h4>
-      <div id="stage3-output"></div>
+      <div class="response-list" id="stage3-output"></div>
     </div>
   </div>
 </div>
@@ -79,63 +79,71 @@
     <p style="color:var(--muted);">Advisory approach for this turn:</p>
     <pre>{{ turn.turn_prompt }}</pre>
 
-    <h4>Advisor answers</h4>
-    <div class="response-list">
-    {% for adv in turn.advisors %}
-      <button class="response-button" type="button"
-        data-title="{{ adv.provider }}"
-        data-turn="{{ turn.turn_index }}"
-        data-stage="advise"
-        data-persona="{{ adv.role or '' }}"
-        data-response='{{ adv.answer|tojson }}'>
-        <span>{{ adv.provider }}</span>
-        <span class="response-meta">
-          {% if adv.duration_seconds is defined and adv.duration_seconds %}
-            <span class="status">{{ "%.0fs"|format(adv.duration_seconds) }}</span>
-          {% endif %}
-          {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role|lower }}</span>{% endif %}
-        </span>
-      </button>
-    {% endfor %}
-    </div>
+    <div class="turn-response-grid">
+      <section class="response-section">
+        <h4>Advisor answers</h4>
+        <div class="response-list">
+        {% for adv in turn.advisors %}
+          <button class="response-button" type="button"
+            data-title="{{ adv.provider }}"
+            data-turn="{{ turn.turn_index }}"
+            data-stage="advise"
+            data-persona="{{ adv.role or '' }}"
+            data-response='{{ adv.answer|tojson }}'>
+            <span class="response-provider">{{ adv.provider }}</span>
+            <span class="response-meta">
+              {% if adv.duration_seconds is defined and adv.duration_seconds %}
+                <span class="status">{{ "%.0fs"|format(adv.duration_seconds) }}</span>
+              {% endif %}
+              {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role|lower }}</span>{% endif %}
+            </span>
+          </button>
+        {% endfor %}
+        </div>
+      </section>
 
-    <h4>Reviews</h4>
-    <div class="response-list">
-    {% for rev in turn.reviews %}
-      {% set review_role = turn.roles.get(rev.provider) if turn.roles else '' %}
-      <button class="response-button" type="button"
-        data-title="{{ rev.provider }}"
-        data-turn="{{ turn.turn_index }}"
-        data-stage="review"
-        data-persona="{{ review_role or '' }}"
-        data-response='{{ rev.review|tojson }}'>
-        <span>{{ rev.provider }}</span>
-        <span class="response-meta">
-          {% if rev.duration_seconds is defined and rev.duration_seconds %}
-            <span class="status">{{ "%.0fs"|format(rev.duration_seconds) }}</span>
-          {% endif %}
-          {% if review_role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ review_role|lower }}</span>{% endif %}
-        </span>
-      </button>
-    {% endfor %}
-    </div>
+      <section class="response-section">
+        <h4>Reviews</h4>
+        <div class="response-list">
+        {% for rev in turn.reviews %}
+          {% set review_role = turn.roles.get(rev.provider) if turn.roles else '' %}
+          <button class="response-button" type="button"
+            data-title="{{ rev.provider }}"
+            data-turn="{{ turn.turn_index }}"
+            data-stage="review"
+            data-persona="{{ review_role or '' }}"
+            data-response='{{ rev.review|tojson }}'>
+            <span class="response-provider">{{ rev.provider }}</span>
+            <span class="response-meta">
+              {% if rev.duration_seconds is defined and rev.duration_seconds %}
+                <span class="status">{{ "%.0fs"|format(rev.duration_seconds) }}</span>
+              {% endif %}
+              {% if review_role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ review_role|lower }}</span>{% endif %}
+            </span>
+          </button>
+        {% endfor %}
+        </div>
+      </section>
 
-    <h4>Chair ({{ turn.chairman.provider }})</h4>
-    <div class="response-list">
-      <button class="response-button" type="button"
-        data-title="{{ turn.chairman.provider }}"
-        data-turn="{{ turn.turn_index }}"
-        data-stage="chair"
-        data-persona="chair"
-        data-response='{{ turn.chairman.answer|tojson }}'>
-        <span>{{ turn.chairman.provider }}</span>
-        <span class="response-meta">
-          {% if turn.chairman.duration_seconds is defined and turn.chairman.duration_seconds %}
-            <span class="status">{{ "%.0fs"|format(turn.chairman.duration_seconds) }}</span>
-          {% endif %}
-          <span class="status">chair</span>
-        </span>
-      </button>
+      <section class="response-section">
+        <h4>Chair</h4>
+        <div class="response-list">
+          <button class="response-button" type="button"
+            data-title="{{ turn.chairman.provider }}"
+            data-turn="{{ turn.turn_index }}"
+            data-stage="chair"
+            data-persona="chair"
+            data-response='{{ turn.chairman.answer|tojson }}'>
+            <span class="response-provider">{{ turn.chairman.provider }}</span>
+            <span class="response-meta">
+              {% if turn.chairman.duration_seconds is defined and turn.chairman.duration_seconds %}
+                <span class="status">{{ "%.0fs"|format(turn.chairman.duration_seconds) }}</span>
+              {% endif %}
+              <span class="status">chair</span>
+            </span>
+          </button>
+        </div>
+      </section>
     </div>
   </div>
 {% endfor %}
@@ -307,6 +315,7 @@
       button.type = "button";
       button.className = "response-button";
       const name = document.createElement("span");
+      name.className = "response-provider";
       name.textContent = provider;
       button.appendChild(name);
 
