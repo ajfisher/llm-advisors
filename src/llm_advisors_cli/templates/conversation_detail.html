@@ -5,7 +5,7 @@
   <p style="color:var(--dark-matter); opacity:0.8; margin-top:6px;">{{ question }}</p>
   <div style="margin-top:10px;">
     <span class="pill">Members: {{ members|join(", ") }}</span>
-    <span class="pill">Chairman: {{ chairman }}</span>
+    <span class="pill">Chair: {{ chairman }}</span>
     <span class="pill">Turns: {{ turns_count }}</span>
     {% if meta and meta.error %}
       <span class="pill" style="background:#ffb3b3; color:#280000;">Error recorded</span>
@@ -23,7 +23,7 @@
 
 {% if final_answer_html %}
 <div class="card">
-  <h3 style="margin-top:0;">Final answer (chairman)</h3>
+  <h3 style="margin-top:0;">Final answer (chair)</h3>
   <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:12px;">
     {{ final_answer_html|safe }}
   </div>
@@ -49,7 +49,7 @@
       <div id="stage2-status"></div>
     </div>
     <div>
-      <h4>Stage 3: Chairman</h4>
+      <h4>Stage 3: Chair</h4>
       <div id="stage3-status"></div>
     </div>
   </div>
@@ -67,7 +67,7 @@
       <div id="stage2-output"></div>
     </div>
     <div>
-      <h4>Chairman</h4>
+      <h4>Chair</h4>
       <div id="stage3-output"></div>
     </div>
   </div>
@@ -83,7 +83,10 @@
     <div class="response-list">
     {% for adv in turn.advisors %}
       <button class="response-button" type="button"
-        data-title="Turn {{ turn.turn_index }} advisor: {{ adv.provider }}"
+        data-title="{{ adv.provider }}"
+        data-turn="{{ turn.turn_index }}"
+        data-stage="advise"
+        data-persona="{{ adv.role or '' }}"
         data-response='{{ adv.answer|tojson }}'>
         <span>{{ adv.provider }}</span>
         <span class="response-meta">
@@ -99,30 +102,38 @@
     <h4>Reviews</h4>
     <div class="response-list">
     {% for rev in turn.reviews %}
+      {% set review_role = turn.roles.get(rev.provider) if turn.roles else '' %}
       <button class="response-button" type="button"
-        data-title="Turn {{ turn.turn_index }} review: {{ rev.provider }}"
+        data-title="{{ rev.provider }}"
+        data-turn="{{ turn.turn_index }}"
+        data-stage="review"
+        data-persona="{{ review_role or '' }}"
         data-response='{{ rev.review|tojson }}'>
         <span>{{ rev.provider }}</span>
         <span class="response-meta">
           {% if rev.duration_seconds is defined and rev.duration_seconds %}
             <span class="status">{{ "%.0fs"|format(rev.duration_seconds) }}</span>
           {% endif %}
+          {% if review_role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ review_role|lower }}</span>{% endif %}
         </span>
       </button>
     {% endfor %}
     </div>
 
-    <h4>Chairman ({{ turn.chairman.provider }})</h4>
+    <h4>Chair ({{ turn.chairman.provider }})</h4>
     <div class="response-list">
       <button class="response-button" type="button"
-        data-title="Turn {{ turn.turn_index }} chairman: {{ turn.chairman.provider }}"
+        data-title="{{ turn.chairman.provider }}"
+        data-turn="{{ turn.turn_index }}"
+        data-stage="chair"
+        data-persona="chair"
         data-response='{{ turn.chairman.answer|tojson }}'>
         <span>{{ turn.chairman.provider }}</span>
         <span class="response-meta">
           {% if turn.chairman.duration_seconds is defined and turn.chairman.duration_seconds %}
             <span class="status">{{ "%.0fs"|format(turn.chairman.duration_seconds) }}</span>
           {% endif %}
-          <span class="status">chairman</span>
+          <span class="status">chair</span>
         </span>
       </button>
     </div>
@@ -138,11 +149,14 @@
 <div class="modal-backdrop" id="response-modal" aria-hidden="true">
   <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="response-modal-title">
     <div class="modal-header">
-      <h3 class="modal-title" id="response-modal-title">Response</h3>
+      <div class="modal-heading">
+        <h3 class="modal-title" id="response-modal-title">Response</h3>
+        <div class="modal-context" id="response-modal-context"></div>
+      </div>
       <button class="modal-close" type="button" id="response-modal-close" aria-label="Close response">x</button>
     </div>
     <div class="modal-body">
-      <pre id="response-modal-body"></pre>
+      <div class="modal-content" id="response-modal-body"></div>
     </div>
   </div>
 </div>
@@ -158,8 +172,10 @@
   const reloadKey = `conversation-reloaded-${conversationId}`;
   const modal = document.getElementById("response-modal");
   const modalTitle = document.getElementById("response-modal-title");
+  const modalContext = document.getElementById("response-modal-context");
   const modalBody = document.getElementById("response-modal-body");
   const modalClose = document.getElementById("response-modal-close");
+  let modalRenderToken = 0;
   window.__roleMap = {};
 
   function formatDuration(seconds) {
@@ -169,12 +185,57 @@
     return `${Math.max(0, Math.round(Number(seconds)))}s`;
   }
 
-  function openResponseModal(title, body) {
+  function escapeHtml(text) {
+    return String(text || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function renderModalContext(context) {
+    modalContext.innerHTML = "";
+    [
+      context.turn ? `Turn ${context.turn}` : "",
+      context.stage || "",
+      context.persona || "",
+    ].filter(Boolean).forEach((value) => {
+      const chip = document.createElement("span");
+      chip.className = "status";
+      chip.textContent = value;
+      modalContext.appendChild(chip);
+    });
+  }
+
+  async function renderMarkdown(text, token) {
+    try {
+      const res = await fetch("/markdown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text || "" }),
+      });
+      if (!res.ok) throw new Error("Markdown render failed");
+      const payload = await res.json();
+      if (token === modalRenderToken) {
+        modalBody.innerHTML = payload.html || "";
+      }
+    } catch (err) {
+      if (token === modalRenderToken) {
+        modalBody.innerHTML = `<pre>${escapeHtml(text || "")}</pre>`;
+      }
+    }
+  }
+
+  function openResponseModal({ title, body, turn, stage, persona }) {
+    const token = ++modalRenderToken;
     modalTitle.textContent = title || "Response";
-    modalBody.textContent = body || "";
+    renderModalContext({ turn, stage, persona });
+    modalBody.innerHTML = "<p style='color:var(--muted);'>Rendering...</p>";
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
     modalClose.focus();
+    renderMarkdown(body || "", token);
   }
 
   function closeResponseModal() {
@@ -229,7 +290,7 @@
     });
   }
 
-  function renderOutput(containerId, mapping, showRoles = true) {
+  function renderOutput(containerId, mapping, showRoles = true, stageLabel = "", turn = "") {
     const container = document.getElementById(containerId);
     container.innerHTML = "";
     const entries = Object.entries(mapping || {});
@@ -265,7 +326,14 @@
         meta.appendChild(roleChip);
       }
       button.appendChild(meta);
-      button.addEventListener("click", () => openResponseModal(provider, message));
+      const persona = showRoles ? role : stageLabel === "chair" ? "chair" : "";
+      button.addEventListener("click", () => openResponseModal({
+        title: provider,
+        body: message,
+        turn,
+        stage: stageLabel,
+        persona,
+      }));
       container.appendChild(button);
     });
     if (!container.children.length) {
@@ -282,9 +350,9 @@
     renderStage("stage1-status", data.stage1 || {}, true);
     renderStage("stage2-status", data.stage2 || {}, true);
     renderStage("stage3-status", data.stage3 || {}, false);
-    renderOutput("stage1-output", data.stage1 || {}, true);
-    renderOutput("stage2-output", data.stage2 || {}, true);
-    renderOutput("stage3-output", data.stage3 || {}, false);
+    renderOutput("stage1-output", data.stage1 || {}, true, "advise", data.turn || 1);
+    renderOutput("stage2-output", data.stage2 || {}, true, "review", data.turn || 1);
+    renderOutput("stage3-output", data.stage3 || {}, false, "chair", data.turn || 1);
 
     if (jobStatus === "running") {
       stopBtn.style.display = "inline-block";
@@ -338,7 +406,13 @@
       } catch (err) {
         // The value is already plain text when JSON parsing is not needed.
       }
-      openResponseModal(button.dataset.title || "Response", body);
+      openResponseModal({
+        title: button.dataset.title || "Response",
+        body,
+        turn: button.dataset.turn || "",
+        stage: button.dataset.stage || "",
+        persona: button.dataset.persona || "",
+      });
     });
   });
 

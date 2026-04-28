@@ -18,6 +18,16 @@ import markdown
 app = Flask(__name__)
 app.secret_key = "llm-advisors"
 
+NONE_ADVISOR_VALUE = "__none__"
+BARE_WEB_PROVIDERS = {"codex", "claude", "gemini", "ollama"}
+PREFERRED_ADVISOR_OPTIONS = [
+    ("codex/gpt-5.2",),
+    ("gemini/gemini-2.5-flash",),
+    ("codex/gpt-5.4",),
+    ("ollama/gemma4:latest", "ollama/gemma4:26b", "ollama/gemma4"),
+]
+PREFERRED_CHAIR_OPTIONS = ("codex/gpt-5.5",)
+
 
 class ProgressState:
     """Track per-stage, per-provider progress."""
@@ -153,9 +163,14 @@ jobs: Dict[str, ConversationJob] = {}
 
 
 def _available_members(cfg: AdvisorsConfig) -> List[str]:
-    options = {"codex", "claude", "gemini"}
-    options.update([m for m in cfg.members if not m.startswith("ollama/") and m != "ollama"])
-    options.update([cfg.chairman] if cfg.chairman not in ("ollama",) else [])
+    options = set()
+    options.update([m for m in cfg.members if m not in BARE_WEB_PROVIDERS])
+    if cfg.chairman and cfg.chairman not in BARE_WEB_PROVIDERS:
+        options.add(cfg.chairman)
+    for candidates in PREFERRED_ADVISOR_OPTIONS:
+        options.add(candidates[0])
+    for candidate in PREFERRED_CHAIR_OPTIONS:
+        options.add(candidate)
 
     for model in discover_codex_models(cfg):
         options.add(f"codex/{model}")
@@ -184,6 +199,70 @@ def _member_sort_key(member: str) -> tuple[int, str]:
     return (order.get(base, 99), member)
 
 
+def _resolve_member_option(member: str, options: List[str]) -> str | None:
+    if member in options:
+        return member
+    if member in BARE_WEB_PROVIDERS:
+        prefix = f"{member}/"
+        return next((option for option in options if option.startswith(prefix)), None)
+    return None
+
+
+def _resolve_preferred_option(candidates: tuple[str, ...], options: List[str]) -> str | None:
+    for candidate in candidates:
+        if candidate in options:
+            return candidate
+    for candidate in candidates:
+        if candidate.startswith("ollama/"):
+            prefix = candidate.rsplit(":", 1)[0]
+            match = next((option for option in options if option.startswith(prefix)), None)
+            if match:
+                return match
+    return None
+
+
+def _default_advisor_slots(cfg: AdvisorsConfig, options: List[str]) -> List[str | None]:
+    selected: List[str] = []
+    for candidates in PREFERRED_ADVISOR_OPTIONS:
+        option = _resolve_preferred_option(candidates, options)
+        if option and option not in selected:
+            selected.append(option)
+
+    for member in cfg.members:
+        option = _resolve_member_option(member, options)
+        if option and option not in selected:
+            selected.append(option)
+        if len(selected) == 4:
+            break
+
+    if not selected and options:
+        selected.append(options[0])
+
+    return (selected + [None] * 4)[:4]
+
+
+def _default_chair(cfg: AdvisorsConfig, options: List[str], advisor_slots: List[str | None]) -> str:
+    preferred = _resolve_preferred_option(PREFERRED_CHAIR_OPTIONS, options)
+    if preferred:
+        return preferred
+    option = _resolve_member_option(cfg.chairman, options)
+    if option:
+        return option
+    return next((slot for slot in advisor_slots if slot), options[0] if options else "")
+
+
+def _advisor_members_from_form(options: List[str]) -> List[str]:
+    valid_options = set(options)
+    members: List[str] = []
+    for idx in range(1, 5):
+        value = (request.form.get(f"advisor_{idx}") or "").strip()
+        if not value or value == NONE_ADVISOR_VALUE or value not in valid_options:
+            continue
+        if value not in members:
+            members.append(value)
+    return members[:4]
+
+
 def _load_meta(conv_dir: Path) -> dict | None:
     meta_file = conv_dir / "meta.json"
     if not meta_file.exists():
@@ -208,11 +287,13 @@ def _load_turns(conv_dir: Path) -> List[dict]:
 def home():
     cfg = load_config()
     members = _available_members(cfg)
+    advisor_slots = _default_advisor_slots(cfg, members)
     return render_template(
         "home.html",
         members=members,
-        default_members=cfg.members,
-        default_chairman=cfg.chairman if cfg.chairman in members else members[0],
+        advisor_slots=advisor_slots,
+        none_advisor_value=NONE_ADVISOR_VALUE,
+        default_chair=_default_chair(cfg, members, advisor_slots),
         default_turns=1,
         thinking_enabled=cfg.thinking_enabled,
     )
@@ -241,6 +322,7 @@ def list_conversations():
                     "meta": {
                         "question": job.question,
                         "members": job.members,
+                        "chair": job.chairman,
                         "chairman": job.chairman,
                         "turns": job.turns,
                         "created_at": "",
@@ -265,7 +347,7 @@ def conversation_detail(conversation_id: str):
 
     question = meta["question"] if meta else (job.question if job else "")
     members = meta["members"] if meta else (job.members if job else [])
-    chairman = meta["chairman"] if meta else (job.chairman if job else "")
+    chairman = (meta.get("chair") or meta.get("chairman")) if meta else (job.chairman if job else "")
     turns_count = meta["turns"] if meta else (job.turns if job else 0)
     final_answer_html = None
     if turns:
@@ -298,7 +380,7 @@ def conversation_status(conversation_id: str):
     meta = _load_meta(conv_dir)
     if meta:
         members = meta.get("members", [])
-        chairman = meta.get("chairman", "")
+        chairman = meta.get("chair") or meta.get("chairman", "")
         stage1 = {m: {"status": "done"} for m in members}
         stage2 = {m: {"status": "done"} for m in members}
         stage3 = {chairman: {"status": "done"}} if chairman else {}
@@ -317,6 +399,16 @@ def conversation_status(conversation_id: str):
         )
 
     abort(404)
+
+
+@app.route("/markdown", methods=["POST"])
+def render_markdown():
+    payload = request.get_json(silent=True) or {}
+    text = payload.get("text")
+    if not isinstance(text, str):
+        text = ""
+    html = markdown.markdown(text, extensions=["extra", "sane_lists"])
+    return jsonify({"html": html})
 
 
 @app.route("/conversations/<conversation_id>/stop", methods=["POST"])
@@ -346,8 +438,12 @@ def start_conversation():
     cfg.logging.enabled = True  # ensure artefacts are available for the web UI
 
     question = (request.form.get("question") or "").strip()
-    members = request.form.getlist("members") or cfg.members
-    chairman = (request.form.get("chairman") or cfg.chairman).strip()
+    available_members = _available_members(cfg)
+    members = _advisor_members_from_form(available_members)
+    advisor_slots = _default_advisor_slots(cfg, available_members)
+    chairman = (request.form.get("chair") or request.form.get("chairman") or "").strip()
+    if chairman not in available_members:
+        chairman = _default_chair(cfg, available_members, advisor_slots)
     try:
         turns = int(request.form.get("turns", "1"))
     except ValueError:
@@ -355,7 +451,7 @@ def start_conversation():
     turns = max(1, turns)
     cfg.thinking_enabled = request.form.get("thinking_enabled") == "on"
 
-    if not question:
+    if not question or not members:
         return redirect(url_for("home"))
 
     conversation_id = generate_conversation_id()

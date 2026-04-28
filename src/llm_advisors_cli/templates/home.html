@@ -6,35 +6,45 @@
     <label for="question">Question / prompt</label>
     <textarea id="question" name="question" placeholder="What should the council discuss?">{{ request.form.question or "" }}</textarea>
 
-    <div class="grid">
-      <div>
-        <label>Members</label>
-        {% for member in members %}
-        <label class="check-row" for="member-{{ loop.index }}">
-          <input type="checkbox" id="member-{{ loop.index }}" name="members" value="{{ member }}"
-            {% if member in default_members %}checked{% endif %}>
-          <span>{{ member }}</span>
-        </label>
-        {% endfor %}
-      </div>
-      <div>
-        <label for="chairman">Chairman</label>
-        <select id="chairman" name="chairman">
+    <div class="advisor-grid" aria-label="Advisor and chair selection">
+      {% for slot in range(1, 5) %}
+      <div class="selection-slot">
+        <label for="advisor-{{ slot }}">Advisor {{ slot }}</label>
+        <select id="advisor-{{ slot }}" name="advisor_{{ slot }}" data-advisor-select {% if slot == 1 %}required{% endif %}>
+          {% if slot != 1 %}
+          <option value="{{ none_advisor_value }}" {% if not advisor_slots[slot - 1] %}selected{% endif %}>None</option>
+          {% endif %}
           {% for member in members %}
-          <option value="{{ member }}" {% if member == default_chairman %}selected{% endif %}>{{ member }}</option>
+          <option value="{{ member }}" {% if member == advisor_slots[slot - 1] %}selected{% endif %}>{{ member }}</option>
           {% endfor %}
         </select>
+      </div>
+      {% endfor %}
 
+      <div class="selection-slot">
+        <label for="chair">Chair</label>
+        <select id="chair" name="chair" required>
+          {% for member in members %}
+          <option value="{{ member }}" {% if member == default_chair %}selected{% endif %}>{{ member }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="run-controls">
+      <div>
         <label for="turns">Turns (1-4)</label>
         <input id="turns" name="turns" type="range" min="1" max="4" step="1" value="{{ default_turns }}" oninput="turnValue.textContent = this.value">
         <div style="color: var(--dark-matter); font-size:14px;">Selected: <span id="turnValue">{{ default_turns }}</span></div>
+      </div>
 
-        <label class="check-row" for="thinking-enabled">
-          <input type="checkbox" id="thinking-enabled" name="thinking_enabled" {% if thinking_enabled %}checked{% endif %}>
-          <span>Thinking mode</span>
-        </label>
+      <label class="check-row" for="thinking-enabled">
+        <input type="checkbox" id="thinking-enabled" name="thinking_enabled" {% if thinking_enabled %}checked{% endif %}>
+        <span>Thinking mode</span>
+      </label>
 
-        <p><button class="btn" type="submit" id="start-btn">Start conversation</button></p>
+      <div style="display:flex; align-items:flex-end; justify-content:flex-end;">
+        <button class="btn" type="submit" id="start-btn">Start conversation</button>
       </div>
     </div>
 
@@ -43,7 +53,41 @@
 <script>
   const form = document.querySelector("form");
   const startBtn = document.getElementById("start-btn");
-  form.addEventListener("submit", () => {
+  const noneAdvisorValue = {{ none_advisor_value | tojson }};
+  const advisorSelects = Array.from(document.querySelectorAll("[data-advisor-select]"));
+
+  function syncAdvisorSelections() {
+    const selected = new Set(
+      advisorSelects
+        .map((select) => select.value)
+        .filter((value) => value && value !== noneAdvisorValue)
+    );
+
+    advisorSelects.forEach((select) => {
+      Array.from(select.options).forEach((option) => {
+        if (!option.value || option.value === noneAdvisorValue) {
+          option.disabled = false;
+          return;
+        }
+        option.disabled = option.value !== select.value && selected.has(option.value);
+      });
+    });
+  }
+
+  advisorSelects.forEach((select) => {
+    select.addEventListener("change", syncAdvisorSelections);
+  });
+  syncAdvisorSelections();
+
+  form.addEventListener("submit", (event) => {
+    const advisors = advisorSelects
+      .map((select) => select.value)
+      .filter((value) => value && value !== noneAdvisorValue);
+    if (!advisors.length) {
+      event.preventDefault();
+      advisorSelects[0]?.focus();
+      return;
+    }
     startBtn.disabled = true;
     startBtn.textContent = "Starting...";
   });

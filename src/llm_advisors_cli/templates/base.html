@@ -75,6 +75,22 @@
     input[type="range"] { padding: 0; }
     textarea { min-height: 140px; resize: vertical; }
     .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .advisor-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      margin-top: 12px;
+    }
+    .selection-slot {
+      min-width: 0;
+    }
+    .run-controls {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(220px, 1fr) minmax(170px, 220px) minmax(150px, 190px);
+      align-items: end;
+      margin-top: 10px;
+    }
     .check-row {
       display: flex;
       align-items: center;
@@ -192,7 +208,7 @@
     .modal-header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 12px;
       padding: 14px 16px;
       border-bottom: 1px solid var(--border-subtle);
@@ -202,6 +218,15 @@
       font-size: 16px;
       font-family:'Space Grotesk','Inter',sans-serif;
       word-break: break-word;
+    }
+    .modal-heading {
+      min-width: 0;
+    }
+    .modal-context {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
     }
     .modal-close {
       border: 1px solid var(--border-subtle);
@@ -217,14 +242,32 @@
       padding: 16px;
       overflow: auto;
     }
-    .modal-body pre {
-      margin: 0;
-      max-height: none;
+    .modal-content {
       background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--dark-matter);
+    }
+    .modal-content > :first-child { margin-top: 0; }
+    .modal-content > :last-child { margin-bottom: 0; }
+    .modal-content pre {
+      max-height: none;
+      overflow: auto;
+      background: var(--lunar-dust-soft);
+    }
+    .modal-content code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
     }
 
     p:has(button#start-btn) {
       text-align: right;
+    }
+    @media (max-width: 760px) {
+      .run-controls {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
