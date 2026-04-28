@@ -91,7 +91,8 @@ llm-advisors "When should I use vector search vs full text search?"
 Useful flags:
 
 - `--members`: override which providers answer/review (defaults to config).
-  Accepts `codex claude gemini ollama` and Ollama model overrides like
+  Accepts `codex claude gemini ollama` and provider model overrides like
+  `codex/gpt-5.5`, `gemini/gemini-3-flash-preview`, and
   `ollama/llama3.1:8b`.
 - `--chairman`: choose who synthesises the final answer (defaults to config).
 - `--turns`: run multiple council rounds (opinions → reviews → chairman) and
@@ -100,6 +101,8 @@ Useful flags:
   turn.
 - `--show-turns`: print a short summary per turn after the final answer.
 - `--max-parallel`: global max concurrent provider calls (default 4).
+- `--no-thinking`: prefer faster direct responses by lowering/disabling model
+  thinking where the provider CLI supports it.
 - `--ollama-parallel-mode`: `sequential` (default) | `limited` | `parallel`.
 - `--ollama-max-parallel`: when mode=`limited`, how many Ollama calls to allow.
 - `--log-dir`: where to write conversation artefacts (default
@@ -113,8 +116,8 @@ Examples:
 llm-advisors --members codex claude \
     --chairman claude "How do I debounce an async function?"
 
-# Ask two specific Ollama models and Codex, show intermediate output
-llm-advisors --members ollama/llama3.1:8b ollama/qwen2.5 codex \
+# Ask specific model variants, show intermediate output
+llm-advisors --members codex/gpt-5.5 gemini/gemini-3-flash-preview ollama/llama3.1:8b \
     --chairman codex --show-intermediate "How does a vector work?"
 ```
 
@@ -151,8 +154,9 @@ python -m llm_advisors_cli.web
 
 It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
 members/chairman/turns, watch live per-member status (with a stop control), and
-browse/delete past runs from `conversations/`. Ollama models installed locally
-are auto-discovered and shown as `ollama/<model>` options.
+browse/delete past runs from `conversations/`. Codex, Gemini, and Ollama model
+variants are shown as `provider/<model>` options where they can be discovered
+locally.
 
 ### Screenshots
 
@@ -185,6 +189,7 @@ members = ["codex", "claude", "gemini", "ollama/llama3.2"]
 # who synthesises the final answer
 chairman = "claude"
 max_parallel = 4
+thinking_enabled = true
 
 [providers.codex]
 enabled = true                      # set false to skip entirely
@@ -198,6 +203,7 @@ extra_args = ["-p"]                 # defaults used if not provided
 
 [providers.gemini]
 enabled = false                     # example of disabling one provider
+model = "gemini-3-flash-preview"   # default model when using bare `gemini`
 
 [providers.ollama]
 model = "llama3.2"                  # default model when using bare `ollama`

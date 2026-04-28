@@ -99,8 +99,8 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         default=_default_members(cfg, ollama_models),
         help=(
             "Council members (default from config). "
-            "Options: codex claude gemini ollama or ollama/<model> "
-            "e.g. 'ollama/llama3.1:8b'"
+            "Options: codex claude gemini ollama or provider/model "
+            "e.g. 'codex/gpt-5.5' 'gemini/gemini-3-flash-preview' 'ollama/llama3.1:8b'"
         ),
     )
     parser.add_argument(
@@ -108,7 +108,7 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         default=cfg.chairman,
         help=(
             "Chairman provider for final synthesis (default from config). "
-            "Can be codex, claude, gemini, ollama or ollama/<model>."
+            "Can be codex, claude, gemini, ollama or provider/model."
         ),
     )
     parser.add_argument(
@@ -132,6 +132,11 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         type=int,
         default=cfg.max_parallel,
         help="Global max parallel tasks (overrides config.general.max_parallel).",
+    )
+    parser.add_argument(
+        "--no-thinking",
+        action="store_true",
+        help="Prefer faster direct responses by lowering/disabling model thinking where supported.",
     )
     parser.add_argument(
         "--ollama-parallel-mode",
@@ -162,6 +167,8 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
 
 def _apply_cli_overrides(cfg: AdvisorsConfig, args: argparse.Namespace) -> AdvisorsConfig:
     cfg.max_parallel = max(1, args.max_parallel)
+    if args.no_thinking:
+        cfg.thinking_enabled = False
 
     ollama_parallel = cfg.parallelism.get("ollama", ProviderParallelismConfig())
     if args.ollama_parallel_mode:

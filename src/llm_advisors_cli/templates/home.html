@@ -10,11 +10,11 @@
       <div>
         <label>Members</label>
         {% for member in members %}
-        <div style="margin-bottom:6px;">
+        <label class="check-row" for="member-{{ loop.index }}">
           <input type="checkbox" id="member-{{ loop.index }}" name="members" value="{{ member }}"
             {% if member in default_members %}checked{% endif %}>
-          <label for="member-{{ loop.index }}" style="display:inline;">{{ member }}</label>
-        </div>
+          <span>{{ member }}</span>
+        </label>
         {% endfor %}
       </div>
       <div>
@@ -28,6 +28,11 @@
         <label for="turns">Turns (1-4)</label>
         <input id="turns" name="turns" type="range" min="1" max="4" step="1" value="{{ default_turns }}" oninput="turnValue.textContent = this.value">
         <div style="color: var(--dark-matter); font-size:14px;">Selected: <span id="turnValue">{{ default_turns }}</span></div>
+
+        <label class="check-row" for="thinking-enabled">
+          <input type="checkbox" id="thinking-enabled" name="thinking_enabled" {% if thinking_enabled %}checked{% endif %}>
+          <span>Thinking mode</span>
+        </label>
 
         <p><button class="btn" type="submit" id="start-btn">Start conversation</button></p>
       </div>

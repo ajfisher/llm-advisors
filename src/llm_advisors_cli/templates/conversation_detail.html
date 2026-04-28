@@ -80,39 +80,72 @@
     <pre>{{ turn.turn_prompt }}</pre>
 
     <h4>Advisor answers</h4>
+    <div class="response-list">
     {% for adv in turn.advisors %}
-      <details>
-        <summary>
-          {{ adv.provider }}
-          <span style="float:right; display:flex; gap:6px; align-items:center;">
-            {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role|lower }}</span>{% endif %}
-          </span>
-        </summary>
-        <pre>{{ adv.answer }}</pre>
-      </details>
+      <button class="response-button" type="button"
+        data-title="Turn {{ turn.turn_index }} advisor: {{ adv.provider }}"
+        data-response='{{ adv.answer|tojson }}'>
+        <span>{{ adv.provider }}</span>
+        <span class="response-meta">
+          {% if adv.duration_seconds is defined and adv.duration_seconds %}
+            <span class="status">{{ "%.0fs"|format(adv.duration_seconds) }}</span>
+          {% endif %}
+          {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role|lower }}</span>{% endif %}
+        </span>
+      </button>
     {% endfor %}
+    </div>
 
     <h4>Reviews</h4>
+    <div class="response-list">
     {% for rev in turn.reviews %}
-      <details>
-        <summary>{{ rev.provider }}</summary>
-        <pre>{{ rev.review }}</pre>
-      </details>
+      <button class="response-button" type="button"
+        data-title="Turn {{ turn.turn_index }} review: {{ rev.provider }}"
+        data-response='{{ rev.review|tojson }}'>
+        <span>{{ rev.provider }}</span>
+        <span class="response-meta">
+          {% if rev.duration_seconds is defined and rev.duration_seconds %}
+            <span class="status">{{ "%.0fs"|format(rev.duration_seconds) }}</span>
+          {% endif %}
+        </span>
+      </button>
     {% endfor %}
+    </div>
 
     <h4>Chairman ({{ turn.chairman.provider }})</h4>
-    <details>
-      <summary>View response</summary>
-      <pre>{{ turn.chairman.answer }}</pre>
-    </details>
+    <div class="response-list">
+      <button class="response-button" type="button"
+        data-title="Turn {{ turn.turn_index }} chairman: {{ turn.chairman.provider }}"
+        data-response='{{ turn.chairman.answer|tojson }}'>
+        <span>{{ turn.chairman.provider }}</span>
+        <span class="response-meta">
+          {% if turn.chairman.duration_seconds is defined and turn.chairman.duration_seconds %}
+            <span class="status">{{ "%.0fs"|format(turn.chairman.duration_seconds) }}</span>
+          {% endif %}
+          <span class="status">chairman</span>
+        </span>
+      </button>
+    </div>
   </div>
 {% endfor %}
 
-{% if not turns %}
+{% if not turns and not job %}
   <div class="card">
     <p style="color:var(--muted);">No turn data recorded yet.</p>
   </div>
 {% endif %}
+
+<div class="modal-backdrop" id="response-modal" aria-hidden="true">
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="response-modal-title">
+    <div class="modal-header">
+      <h3 class="modal-title" id="response-modal-title">Response</h3>
+      <button class="modal-close" type="button" id="response-modal-close" aria-label="Close response">x</button>
+    </div>
+    <div class="modal-body">
+      <pre id="response-modal-body"></pre>
+    </div>
+  </div>
+</div>
 
 <script>
   const conversationId = "{{ conversation_id }}";
@@ -123,9 +156,33 @@
   const turnLabel = document.getElementById("turn-label");
   const stopBtn = document.getElementById("stop-btn");
   const reloadKey = `conversation-reloaded-${conversationId}`;
+  const modal = document.getElementById("response-modal");
+  const modalTitle = document.getElementById("response-modal-title");
+  const modalBody = document.getElementById("response-modal-body");
+  const modalClose = document.getElementById("response-modal-close");
   window.__roleMap = {};
 
-  function renderStage(containerId, mapping) {
+  function formatDuration(seconds) {
+    if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) {
+      return "";
+    }
+    return `${Math.max(0, Math.round(Number(seconds)))}s`;
+  }
+
+  function openResponseModal(title, body) {
+    modalTitle.textContent = title || "Response";
+    modalBody.textContent = body || "";
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+    modalClose.focus();
+  }
+
+  function closeResponseModal() {
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  function renderStage(containerId, mapping, showRoles = true) {
     const container = document.getElementById(containerId);
     container.innerHTML = "";
     const entries = Object.entries(mapping || {});
@@ -135,6 +192,7 @@
     }
     entries.forEach(([provider, statusData]) => {
       const status = typeof statusData === "string" ? statusData : statusData.status;
+      const duration = typeof statusData === "object" ? formatDuration(statusData.duration_seconds) : "";
       const role = ((window.__roleMap || {})[provider] || "").toLowerCase();
       const row = document.createElement("div");
       row.style.display = "flex";
@@ -149,12 +207,18 @@
       right.style.display = "flex";
       right.style.gap = "6px";
       right.style.alignItems = "center";
-      if (role) {
+      if (showRoles && role) {
         const roleChip = document.createElement("span");
         roleChip.className = `status`;
         roleChip.style.border = "1px solid rgba(255,255,255,0.15)";
         roleChip.textContent = role;
         right.appendChild(roleChip);
+      }
+      if (duration) {
+        const durationEl = document.createElement("span");
+        durationEl.className = "status";
+        durationEl.textContent = duration;
+        right.appendChild(durationEl);
       }
       const statusEl = document.createElement("span");
       statusEl.className = `status ${status}`;
@@ -165,11 +229,8 @@
     });
   }
 
-  function renderOutput(containerId, mapping) {
+  function renderOutput(containerId, mapping, showRoles = true) {
     const container = document.getElementById(containerId);
-    const openSet = new Set(
-      Array.from(container.querySelectorAll("details[open]")).map((d) => d.dataset.provider || "")
-    );
     container.innerHTML = "";
     const entries = Object.entries(mapping || {});
     if (!entries.length) {
@@ -179,21 +240,37 @@
     entries.forEach(([provider, data]) => {
       const message = typeof data === "object" ? data.message : "";
       if (!message) return;
+      const duration = typeof data === "object" ? formatDuration(data.duration_seconds) : "";
       const role = ((window.__roleMap || {})[provider] || "").toLowerCase();
-      const details = document.createElement("details");
-      details.style.marginBottom = "8px";
-      details.dataset.provider = provider;
-      if (openSet.has(provider)) {
-        details.open = true;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "response-button";
+      const name = document.createElement("span");
+      name.textContent = provider;
+      button.appendChild(name);
+
+      const meta = document.createElement("span");
+      meta.className = "response-meta";
+      if (duration) {
+        const durationChip = document.createElement("span");
+        durationChip.className = "status";
+        durationChip.textContent = duration;
+        meta.appendChild(durationChip);
       }
-      const summary = document.createElement("summary");
-      summary.innerHTML = role ? `${provider} <span style="float:right;"><span class="status" style="border:1px solid rgba(255,255,255,0.15);">${role}</span></span>` : provider;
-      details.appendChild(summary);
-      const pre = document.createElement("pre");
-      pre.textContent = message;
-      details.appendChild(pre);
-      container.appendChild(details);
+      if (showRoles && role) {
+        const roleChip = document.createElement("span");
+        roleChip.className = "status";
+        roleChip.style.border = "1px solid rgba(255,255,255,0.15)";
+        roleChip.textContent = role;
+        meta.appendChild(roleChip);
+      }
+      button.appendChild(meta);
+      button.addEventListener("click", () => openResponseModal(provider, message));
+      container.appendChild(button);
     });
+    if (!container.children.length) {
+      container.innerHTML = "<p style='color:var(--muted);'>No data yet.</p>";
+    }
   }
 
   function renderStatus(data) {
@@ -202,12 +279,12 @@
     statusLabel.className = `status ${jobStatus}`;
     turnLabel.textContent = `Turn ${data.turn || 1} / ${data.turns || turnsTotal}`;
     window.__roleMap = data.roles || {};
-    renderStage("stage1-status", data.stage1 || {});
-    renderStage("stage2-status", data.stage2 || {});
-    renderStage("stage3-status", data.stage3 || {});
-    renderOutput("stage1-output", data.stage1 || {});
-    renderOutput("stage2-output", data.stage2 || {});
-    renderOutput("stage3-output", data.stage3 || {});
+    renderStage("stage1-status", data.stage1 || {}, true);
+    renderStage("stage2-status", data.stage2 || {}, true);
+    renderStage("stage3-status", data.stage3 || {}, false);
+    renderOutput("stage1-output", data.stage1 || {}, true);
+    renderOutput("stage2-output", data.stage2 || {}, true);
+    renderOutput("stage3-output", data.stage3 || {}, false);
 
     if (jobStatus === "running") {
       stopBtn.style.display = "inline-block";
@@ -252,6 +329,30 @@
       setTimeout(pollStatus, 500);
     });
   }
+
+  document.querySelectorAll("[data-response]").forEach((button) => {
+    button.addEventListener("click", () => {
+      let body = button.dataset.response || "";
+      try {
+        body = JSON.parse(body);
+      } catch (err) {
+        // The value is already plain text when JSON parsing is not needed.
+      }
+      openResponseModal(button.dataset.title || "Response", body);
+    });
+  });
+
+  modalClose.addEventListener("click", closeResponseModal);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeResponseModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && modal.classList.contains("open")) {
+      closeResponseModal();
+    }
+  });
 
   pollStatus();
 </script>

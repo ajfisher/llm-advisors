@@ -20,7 +20,7 @@ class ProviderConfig:
     name: str
     enabled: bool = True
     command: str | None = None  # override CLI command if needed
-    model: str | None = None    # mainly for Ollama
+    model: str | None = None    # default model for providers that support -m/model args
     extra_args: List[str] = field(default_factory=list)
 
 
@@ -42,6 +42,7 @@ class AdvisorsConfig:
     chairman: str = "codex"
     providers: Dict[str, ProviderConfig] = field(default_factory=dict)
     max_parallel: int = 4
+    thinking_enabled: bool = True
     parallelism: Dict[str, ProviderParallelismConfig] = field(
         default_factory=lambda: {"ollama": ProviderParallelismConfig()}
     )
@@ -71,6 +72,10 @@ def load_config() -> AdvisorsConfig:
     max_parallel = general.get("max_parallel")
     if isinstance(max_parallel, int):
         cfg.max_parallel = max_parallel
+
+    thinking_enabled = general.get("thinking_enabled")
+    if isinstance(thinking_enabled, bool):
+        cfg.thinking_enabled = thinking_enabled
 
     # providers
     providers_section = data.get("providers", {})

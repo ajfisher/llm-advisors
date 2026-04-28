@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Dict, List
 
@@ -11,7 +12,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, url
 from .advisors import ProgressEvent
 from .config import AdvisorsConfig, load_config
 from .conversation import generate_conversation_id, run_conversation
-from .providers import discover_ollama_models
+from .providers import discover_codex_models, discover_gemini_models, discover_ollama_models
 import markdown
 
 app = Flask(__name__)
@@ -48,18 +49,22 @@ class ProgressState:
         if event.event == "turn" and event.status == "start":
             self.turn = event.turn
             self._init_turn(event.turn)
+            self.roles = {}
             if event.message:
                 try:
                     roles = json.loads(event.message)
                     if isinstance(roles, dict):
-                        self.roles.update(roles)
+                        self.roles = {str(k): str(v) for k, v in roles.items()}
                 except Exception:
                     pass
         elif event.event == "provider" and event.provider:
             key = (event.turn, event.stage, event.provider)
+            current = self.stage_status.get(key, {})
             self.stage_status[key] = {
                 "status": event.status or "pending",
                 "message": event.message,
+                "started_at": current.get("started_at") if event.status != "running" else time.monotonic(),
+                "duration_seconds": event.duration_seconds,
             }
             if event.message:
                 self.messages[f"{event.stage}:{event.provider}"] = event.message
@@ -67,12 +72,20 @@ class ProgressState:
             self.status = "done" if event.status == "done" else event.status or "running"
 
     def snapshot(self) -> Dict[str, object]:
-        def stage_map(stage: str) -> Dict[str, str]:
-            return {
-                provider: self.stage_status.get(
+        def stage_map(stage: str) -> Dict[str, object]:
+            now = time.monotonic()
+            result = {}
+            for provider in self._providers_for_stage(stage):
+                item = self.stage_status.get(
                     (self.turn, stage, provider), {"status": "pending"}
-                )
-                for provider in self._providers_for_stage(stage)
+                ).copy()
+                if item.get("status") == "running" and item.get("started_at"):
+                    item["duration_seconds"] = now - float(item["started_at"])
+                item.pop("started_at", None)
+                result[provider] = item
+            return {
+                provider: data
+                for provider, data in result.items()
             }
 
         return {
@@ -144,6 +157,12 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
     options.update([m for m in cfg.members if not m.startswith("ollama/") and m != "ollama"])
     options.update([cfg.chairman] if cfg.chairman not in ("ollama",) else [])
 
+    for model in discover_codex_models(cfg):
+        options.add(f"codex/{model}")
+
+    for model in discover_gemini_models(cfg):
+        options.add(f"gemini/{model}")
+
     # Dynamically discover Ollama models and add as ollama/<model>
     ollama_models = discover_ollama_models(cfg)
     for model in ollama_models:
@@ -156,7 +175,13 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
     if cfg.chairman.startswith("ollama/"):
         options.add(cfg.chairman)
 
-    return sorted(options)
+    return sorted(options, key=_member_sort_key)
+
+
+def _member_sort_key(member: str) -> tuple[int, str]:
+    order = {"codex": 0, "claude": 1, "gemini": 2, "ollama": 3}
+    base = member.split("/", 1)[0]
+    return (order.get(base, 99), member)
 
 
 def _load_meta(conv_dir: Path) -> dict | None:
@@ -189,6 +214,7 @@ def home():
         default_members=cfg.members,
         default_chairman=cfg.chairman if cfg.chairman in members else members[0],
         default_turns=1,
+        thinking_enabled=cfg.thinking_enabled,
     )
 
 
@@ -327,6 +353,7 @@ def start_conversation():
     except ValueError:
         turns = 1
     turns = max(1, turns)
+    cfg.thinking_enabled = request.form.get("thinking_enabled") == "on"
 
     if not question:
         return redirect(url_for("home"))
