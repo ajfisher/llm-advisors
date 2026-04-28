@@ -22,13 +22,13 @@ via OpenRouter/API keys, it coordinates multiple CLIs you already use.
 Run a structured, multi-turn “council” of LLMs via the CLIs you already have.
 It shells out to Codex/Claude/Gemini/Ollama and orchestrates up to 4 turns:
 
-- **Turn 1 – baseline**: advisors answer freely; chairman synthesises and
+- **Turn 1 - baseline**: advisors answer freely; chair synthesises and
   produces a summary object.
-- **Turn 2 – divergence**: advisors get roles (Explorer/Skeptic/etc.) and push
-  new ideas; chairman produces a task sheet.
-- **Turn 3 – task solving**: advisors solve the task sheet; chairman builds a
+- **Turn 2 - divergence**: advisors get roles (Explorer/Skeptic/etc.) and push
+  new ideas; chair produces a task sheet.
+- **Turn 3 - task solving**: advisors solve the task sheet; chair builds a
   convergence-prep summary.
-- **Turn 4 – convergence**: advisors propose finals; chairman produces the
+- **Turn 4 - convergence**: advisors propose finals; chair produces the
   final answer.
 
 Roles rotate after turn 1 to avoid stagnation. All prompts/results are logged
@@ -94,9 +94,9 @@ Useful flags:
   Accepts `codex claude gemini ollama` and provider model overrides like
   `codex/gpt-5.5`, `gemini/gemini-3-flash-preview`, and
   `ollama/llama3.1:8b`.
-- `--chairman`: choose who synthesises the final answer (defaults to config).
-- `--turns`: run multiple council rounds (opinions → reviews → chairman) and
-  feed the last chairman answer into the next turn.
+- `--chair`: choose who synthesises the final answer (defaults to config).
+- `--turns`: run multiple council rounds (opinions -> reviews -> chair) and
+  feed the last chair answer into the next turn.
 - `--show-intermediate`: print stage 1 answers and stage 2 reviews for each
   turn.
 - `--show-turns`: print a short summary per turn after the final answer.
@@ -113,13 +113,13 @@ Useful flags:
 Examples:
 
 ```bash
-# Ask only Codex and Claude, use Claude to chair
+# Ask only Codex and Claude, use Claude as chair
 llm-advisors --members codex claude \
-    --chairman claude "How do I debounce an async function?"
+    --chair claude "How do I debounce an async function?"
 
 # Ask specific model variants, show intermediate output
 llm-advisors --members codex/gpt-5.5 gemini/gemini-3-flash-preview ollama/llama3.1:8b \
-    --chairman codex --show-intermediate "How does a vector work?"
+    --chair codex/gpt-5.5 --show-intermediate "How does a vector work?"
 ```
 
 If a provider CLI fails, you’ll see a `ProviderError` with the CLI exit code
@@ -154,7 +154,7 @@ python -m llm_advisors_cli.web
 ```
 
 It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
-members/chairman/turns, watch live per-member status (with a stop control), and
+advisors/chair/turns, watch live per-member status (with a stop control), and
 browse/delete past runs from `conversations/`. Codex, Gemini, and Ollama model
 variants are shown as `provider/<model>` options where they can be discovered
 locally.
@@ -175,8 +175,9 @@ Conversation detail with final answer plus turn artefacts:
 
 ## 5. Configuration
 
-Configuration is optional. Defaults live in code (`codex`, `claude`, `gemini`,
-`ollama` as members; `codex` as chairman). If present, config is read from:
+Configuration is optional. Defaults live in code (`codex/gpt-5.2`,
+`gemini/gemini-2.5-flash`, `codex/gpt-5.4`, `ollama/gemma4:latest` as
+members; `codex/gpt-5.5` as chair). If present, config is read from:
 
 `~/.config/llm_advisors/config.toml`
 
@@ -185,10 +186,10 @@ Structure:
 ```toml
 [general]
 # order matters for labelling A/B/C/… 
-members = ["codex", "claude", "gemini", "ollama/llama3.2"] 
+members = ["codex/gpt-5.2", "gemini/gemini-2.5-flash", "codex/gpt-5.4", "ollama/gemma4:latest"]
 
 # who synthesises the final answer
-chairman = "claude"
+chair = "codex/gpt-5.5"
 max_parallel = 4
 thinking_enabled = true
 
@@ -220,6 +221,6 @@ base_dir = "conversations"
 ```
 
 Runtime flags always win over config values. To use a specific Ollama model
-once, pass `--members ollama/llama3.1:8b` (or set `chairman` to `ollama/…`).
+once, pass `--members ollama/llama3.1:8b` (or set `chair` to `ollama/...`).
 You can also point `command` to a mock script if you want to stub providers
 during development.

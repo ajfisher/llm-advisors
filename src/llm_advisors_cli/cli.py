@@ -61,7 +61,7 @@ class CLIProgressRenderer:
         lines.append("Stage 2: Reviews")
         for member in self.members:
             lines.append(self._fmt_line(self.turn, "stage2", member))
-        lines.append("Stage 3: Chairman")
+        lines.append("Stage 3: Chair")
         lines.append(self._fmt_line(self.turn, "stage3", self.chairman))
 
         block = "\n".join(lines) + "\n"
@@ -104,12 +104,19 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         ),
     )
     parser.add_argument(
-        "--chairman",
+        "--chair",
+        dest="chairman",
+        metavar="CHAIR",
         default=cfg.chairman,
         help=(
-            "Chairman provider for final synthesis (default from config). "
+            "Chair provider for final synthesis (default from config). "
             "Can be codex, claude, gemini, ollama or provider/model."
         ),
+    )
+    parser.add_argument(
+        "--chairman",
+        dest="chairman",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--turns",
@@ -212,7 +219,7 @@ def _print_turn_summary(turn, total_turns: int) -> None:
         print(review.raw_review)
         print()
 
-    print("=== STAGE 3: CHAIRMAN ===\n")
+    print("=== STAGE 3: CHAIR ===\n")
     print(f"[{turn.chairman.provider}]")
     print(turn.chairman.answer)
     print()
@@ -222,7 +229,7 @@ def _print_turn_overview(run: ConversationRun) -> None:
     print("\n=== TURN OVERVIEW ===\n")
     for turn in run.turns:
         print(f"Turn {turn.turn_index}:")
-        print(f"- Chairman ({turn.chairman.provider}) answer:\n{turn.chairman.answer}\n")
+        print(f"- Chair ({turn.chairman.provider}) answer:\n{turn.chairman.answer}\n")
 
 
 def main(argv: List[str] | None = None) -> None:

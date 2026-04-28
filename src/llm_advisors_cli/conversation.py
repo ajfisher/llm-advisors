@@ -140,7 +140,7 @@ Respond in:
 
     if kind == "task_solve":
         return f"""
-You must address the chairman's tasks from the previous turn.
+You must address the chair's tasks from the previous turn.
 Your role this turn: {role or 'Advisor'}.
 
 Tasks to solve:
@@ -392,6 +392,7 @@ class ConversationLogger:
             "created_at": run.created_at,
             "question": run.question,
             "members": run.members,
+            "chair": run.chairman,
             "chairman": run.chairman,
             "turns": run.turns_requested,
             "config": run.config,
@@ -587,7 +588,7 @@ async def run_conversation_async(
                 review_prompt_override=review_prompt,
             )
             if show_progress:
-                alog(f"[turn {turn_index}/{effective_turns}] Asking chairman '{chairman}' to synthesize final answer ...")
+                alog(f"[turn {turn_index}/{effective_turns}] Asking chair '{chairman}' to synthesize final answer ...")
 
             chairman_prompt = _build_chairman_prompt(
                 kind,

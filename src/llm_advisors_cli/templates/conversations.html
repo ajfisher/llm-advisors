@@ -14,7 +14,7 @@
         </div>
         <div style="margin-top:6px;">
           <span class="pill">Members: {{ conv.meta.members|join(", ") }}</span>
-          <span class="pill">Chairman: {{ conv.meta.chairman }}</span>
+          <span class="pill">Chair: {{ conv.meta.chair or conv.meta.chairman }}</span>
           <span class="pill">Turns: {{ conv.meta.turns }}</span>
         </div>
       </div>

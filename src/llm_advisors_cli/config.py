@@ -38,8 +38,15 @@ class LoggingConfig:
 
 @dataclass
 class AdvisorsConfig:
-    members: List[str] = field(default_factory=lambda: ["codex", "claude", "gemini", "ollama"])
-    chairman: str = "codex"
+    members: List[str] = field(
+        default_factory=lambda: [
+            "codex/gpt-5.2",
+            "gemini/gemini-2.5-flash",
+            "codex/gpt-5.4",
+            "ollama/gemma4:latest",
+        ]
+    )
+    chairman: str = "codex/gpt-5.5"
     providers: Dict[str, ProviderConfig] = field(default_factory=dict)
     max_parallel: int = 4
     thinking_enabled: bool = True
@@ -65,7 +72,7 @@ def load_config() -> AdvisorsConfig:
     if isinstance(members, list):
         cfg.members = [str(m) for m in members if isinstance(m, str)]
 
-    chairman = general.get("chairman")
+    chairman = general.get("chair") or general.get("chairman")
     if isinstance(chairman, str):
         cfg.chairman = chairman
 

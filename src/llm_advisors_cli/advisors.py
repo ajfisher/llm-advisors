@@ -311,7 +311,7 @@ def build_turn_prompt(
     context_chunks = []
     for turn in previous_turns:
         context_chunks.append(
-            f"Turn {turn.turn_index} chairman answer:\n{turn.chairman.answer}"
+            f"Turn {turn.turn_index} chair answer:\n{turn.chairman.answer}"
         )
     context_block = "\n\n".join(context_chunks)
 
@@ -442,7 +442,7 @@ async def stage3_chairman_async(
 ) -> ChairmanCall:
     prompt = chairman_prompt_override or _build_chairman_prompt(question, opinions, reviews)
     if log_progress:
-        alog(f"  - [stage3] asking chairman '{chairman}' ...")
+        alog(f"  - [stage3] asking chair '{chairman}' ...")
     res = await _call_provider_async(
         chairman,
         prompt,
@@ -454,7 +454,7 @@ async def stage3_chairman_async(
         turn_index=turn_index,
     )
     if log_progress:
-        alog("  - [stage3] chairman done.")
+        alog("  - [stage3] chair done.")
     return ChairmanCall(
         provider=res.provider,
         prompt=prompt,
