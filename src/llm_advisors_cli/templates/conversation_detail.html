@@ -1,158 +1,264 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card">
-  <h2 style="margin-top:0;">Conversation {{ conversation_id }}</h2>
-  <p style="color:var(--dark-matter); opacity:0.8; margin-top:6px;">{{ question }}</p>
-  <div style="margin-top:10px;">
-    <span class="pill">Members: {{ members|join(", ") }}</span>
+{% macro provider_token(provider) -%}
+  {% set family = provider.split('/')[0] if provider else 'model' %}
+  <span class="provider-token provider-{{ family }}">{{ family }}</span>
+{%- endmacro %}
+
+{% macro response_button(provider, body, turn, stage, persona, duration) -%}
+  <button class="response-button" type="button"
+    data-title="{{ provider }}"
+    data-turn="{{ turn }}"
+    data-stage="{{ stage }}"
+    data-persona="{{ persona or '' }}"
+    data-response='{{ body|tojson }}'>
+    <span class="response-provider-line">
+      {{ provider_token(provider) }}
+      <span class="response-provider">{{ provider }}</span>
+    </span>
+    <span class="response-snippet">{{ body|replace('\n', ' ')|truncate(150) }}</span>
+    <span class="response-meta">
+      {% if duration is defined and duration %}
+        <span class="status">{{ "%.0fs"|format(duration) }}</span>
+      {% endif %}
+      <span class="status">{{ stage }}</span>
+      {% if persona %}<span class="status">{{ persona|lower }}</span>{% endif %}
+    </span>
+  </button>
+{%- endmacro %}
+
+<section class="card workspace-header">
+  <div class="workspace-title-row">
+    <div>
+      <p class="page-eyebrow">Conversation</p>
+      <h1 class="conversation-title">{{ conversation_id }}</h1>
+      <p class="question-text">{{ question }}</p>
+    </div>
+    <div class="action-row">
+      <a class="btn secondary" href="{{ url_for('home') }}">New conversation</a>
+      <form method="post" action="{{ url_for('delete_conversation', conversation_id=conversation_id) }}">
+        <button class="btn danger" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="metadata-strip">
+    <span class="pill">Advisors: {{ members|length }}</span>
     <span class="pill">Chair: {{ chairman }}</span>
     <span class="pill">Turns: {{ turns_count }}</span>
-    {% if meta and meta.error %}
-      <span class="pill" style="background:#ffb3b3; color:#280000;">Error recorded</span>
+    {% if meta and meta.config %}
+      <span class="pill">Thinking: {{ "on" if meta.config.thinking_enabled else "off" }}</span>
+      <span class="pill">Ollama parallel: {{ meta.config.ollama_max_parallel }}</span>
     {% endif %}
     {% if meta and meta.error %}
-      <p style="color:var(--muted); margin-top:6px;">Error: {{ meta.error }}</p>
+      <span class="pill error">Error recorded</span>
+    {% elif turns %}
+      <span class="pill success">Complete</span>
+    {% elif job %}
+      <span class="pill">Running</span>
     {% endif %}
   </div>
-  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
-    <form method="post" action="{{ url_for('delete_conversation', conversation_id=conversation_id) }}">
-      <button class="btn" type="submit" style="background:var(--mars-clay);">Delete conversation</button>
-    </form>
-  </div>
-</div>
 
-{% if final_answer_html %}
-<div class="card">
-  <h3 style="margin-top:0;">Final answer (chair)</h3>
-  <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:12px;">
-    {{ final_answer_html|safe }}
-  </div>
-</div>
-{% endif %}
+  {% if meta and meta.error %}
+    <p style="color:var(--muted); margin:0;">Error: {{ meta.error }}</p>
+  {% endif %}
 
-<div class="card" id="live-card">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h3 style="margin:0;">Live status</h3>
-    <button class="btn" id="stop-btn" {% if not job %}style="display:none;"{% endif %}>Stop</button>
-  </div>
-  <div style="margin-top:10px;">
-    Status: <span id="status-label" class="status pending">pending</span>
-    <span class="pill" id="turn-label">Turn 1 / {{ turns_count }}</span>
-  </div>
-  <div class="grid" style="margin-top:12px;">
-    <div>
-      <h4>Stage 1: Opinions</h4>
-      <div id="stage1-status"></div>
+  <div class="stats-strip">
+    <div class="stat-tile">
+      <span class="stat-label">Model Time</span>
+      <span class="stat-value">{{ stats.total_model_display }}</span>
+      <span class="stat-note">{{ stats.call_count }} completed calls</span>
     </div>
-    <div>
-      <h4>Stage 2: Reviews</h4>
-      <div id="stage2-status"></div>
+    <div class="stat-tile">
+      <span class="stat-label">Average Call</span>
+      <span class="stat-value">{{ stats.average_display }}</span>
+      <span class="stat-note">Across advisors, reviews, and chair</span>
     </div>
-    <div>
-      <h4>Stage 3: Chair</h4>
-      <div id="stage3-status"></div>
+    <div class="stat-tile">
+      <span class="stat-label">Fastest</span>
+      <span class="stat-value">{{ stats.fastest_display }}</span>
+      <span class="stat-note">{{ stats.fastest_call.provider if stats.fastest_call else "Awaiting data" }}</span>
+    </div>
+    <div class="stat-tile">
+      <span class="stat-label">Slowest</span>
+      <span class="stat-value">{{ stats.slowest_display }}</span>
+      <span class="stat-note">{{ stats.slowest_call.provider if stats.slowest_call else "Awaiting data" }}</span>
     </div>
   </div>
-</div>
+</section>
 
-<div class="card" id="live-output-card">
-  <h3 style="margin-top:0;">Live answers</h3>
-  <div class="grid">
-    <div>
-      <h4>Advisor responses</h4>
-      <div class="response-list" id="stage1-output"></div>
-    </div>
-    <div>
-      <h4>Peer reviews</h4>
-      <div class="response-list" id="stage2-output"></div>
-    </div>
-    <div>
-      <h4>Chair</h4>
-      <div class="response-list" id="stage3-output"></div>
-    </div>
-  </div>
-</div>
+<div class="conversation-layout">
+  <aside class="card run-sidebar">
+    <section class="sidebar-section">
+      <h3 class="sidebar-title">Run Timeline</h3>
+      {% if turn_summaries %}
+        <div class="timeline-list">
+          {% for item in turn_summaries %}
+            <a class="timeline-link" href="#turn-{{ item.index }}">
+              <span class="timeline-index">{{ item.index }}</span>
+              <span class="timeline-main">
+                {{ item.label }}
+                <span class="timeline-meta">{{ item.response_count }} responses - {{ item.duration_display }}</span>
+              </span>
+            </a>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="stat-note">Turn data will appear as the run completes.</p>
+      {% endif %}
+    </section>
 
-{% for turn in turns %}
-  <div class="card">
-    <h3 style="margin-top:0;">Turn {{ turn.turn_index }}</h3>
-    <p style="color:var(--muted);">Advisory approach for this turn:</p>
-    <pre>{{ turn.turn_prompt }}</pre>
-
-    <div class="turn-response-grid">
-      <section class="response-section">
-        <h4>Advisor answers</h4>
-        <div class="response-list">
-        {% for adv in turn.advisors %}
-          <button class="response-button" type="button"
-            data-title="{{ adv.provider }}"
-            data-turn="{{ turn.turn_index }}"
-            data-stage="advise"
-            data-persona="{{ adv.role or '' }}"
-            data-response='{{ adv.answer|tojson }}'>
-            <span class="response-provider">{{ adv.provider }}</span>
-            <span class="response-meta">
-              {% if adv.duration_seconds is defined and adv.duration_seconds %}
-                <span class="status">{{ "%.0fs"|format(adv.duration_seconds) }}</span>
-              {% endif %}
-              {% if adv.role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ adv.role|lower }}</span>{% endif %}
-            </span>
-          </button>
+    <section class="sidebar-section">
+      <h3 class="sidebar-title">Model Set</h3>
+      <div class="stage-breakdown">
+        {% for member in members %}
+          <div class="stage-breakdown-row">
+            <span>{{ provider_token(member) }} {{ member }}</span>
+          </div>
         {% endfor %}
+        <div class="stage-breakdown-row">
+          <span>{{ provider_token(chairman) }} {{ chairman }}</span>
+          <span class="status">chair</span>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section class="response-section">
-        <h4>Reviews</h4>
-        <div class="response-list">
-        {% for rev in turn.reviews %}
-          {% set review_role = turn.roles.get(rev.provider) if turn.roles else '' %}
-          <button class="response-button" type="button"
-            data-title="{{ rev.provider }}"
-            data-turn="{{ turn.turn_index }}"
-            data-stage="review"
-            data-persona="{{ review_role or '' }}"
-            data-response='{{ rev.review|tojson }}'>
-            <span class="response-provider">{{ rev.provider }}</span>
-            <span class="response-meta">
-              {% if rev.duration_seconds is defined and rev.duration_seconds %}
-                <span class="status">{{ "%.0fs"|format(rev.duration_seconds) }}</span>
-              {% endif %}
-              {% if review_role %}<span class="status" style="border:1px solid rgba(255,255,255,0.15);">{{ review_role|lower }}</span>{% endif %}
-            </span>
-          </button>
+    <section class="sidebar-section">
+      <h3 class="sidebar-title">Stage Time</h3>
+      <div class="stage-breakdown">
+        {% for stage, label in stage_labels.items() %}
+          <div class="stage-breakdown-row">
+            <span>{{ label }}</span>
+            <strong>{{ stats.stage_totals[stage].display }}</strong>
+          </div>
         {% endfor %}
-        </div>
-      </section>
+      </div>
+    </section>
+  </aside>
 
-      <section class="response-section">
-        <h4>Chair</h4>
-        <div class="response-list">
-          <button class="response-button" type="button"
-            data-title="{{ turn.chairman.provider }}"
-            data-turn="{{ turn.turn_index }}"
-            data-stage="chair"
-            data-persona="chair"
-            data-response='{{ turn.chairman.answer|tojson }}'>
-            <span class="response-provider">{{ turn.chairman.provider }}</span>
-            <span class="response-meta">
-              {% if turn.chairman.duration_seconds is defined and turn.chairman.duration_seconds %}
-                <span class="status">{{ "%.0fs"|format(turn.chairman.duration_seconds) }}</span>
+  <div>
+    {% if final_answer_html %}
+    <section class="card final-answer">
+      <div class="answer-toolbar">
+        <div>
+          <p class="page-eyebrow">Final Output</p>
+          <h3 style="margin:0;">Final answer from chair</h3>
+        </div>
+        <div class="action-row">
+          <button class="btn secondary" type="button" id="copy-final-btn">Copy Markdown</button>
+          <a class="btn secondary" id="export-final-btn" href="#" download="{{ conversation_id }}.md">Export Markdown</a>
+        </div>
+      </div>
+      <div class="markdown-surface">
+        {{ final_answer_html|safe }}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if job %}
+    <section class="card" id="live-card">
+      <div class="section-title-row">
+        <div>
+          <p class="page-eyebrow">Live Run</p>
+          <h3>Progress matrix</h3>
+        </div>
+        <button class="btn" id="stop-btn">Stop</button>
+      </div>
+      <div class="live-status-line">
+        <span>Status:</span>
+        <span id="status-label" class="status pending">pending</span>
+        <span class="pill" id="turn-label">Turn 1 / {{ turns_count }}</span>
+      </div>
+      <div class="run-matrix" id="live-matrix" aria-label="Live progress matrix"></div>
+    </section>
+
+    <section class="card" id="live-output-card">
+      <div class="section-title-row">
+        <div>
+          <p class="page-eyebrow">Live Output</p>
+          <h3>Responses as they finish</h3>
+        </div>
+      </div>
+      <div class="turn-response-grid">
+        <section class="response-section">
+          <h4>Advisor answers</h4>
+          <div class="response-list" id="stage1-output"></div>
+        </section>
+        <section class="response-section">
+          <h4>Peer reviews</h4>
+          <div class="response-list" id="stage2-output"></div>
+        </section>
+        <section class="response-section">
+          <h4>Chair</h4>
+          <div class="response-list" id="stage3-output"></div>
+        </section>
+      </div>
+    </section>
+    {% endif %}
+
+    {% for view in turn_views %}
+      {% set turn = view.turn %}
+      {% set summary = view.summary %}
+      <section class="card turn-card" id="turn-{{ turn.turn_index }}">
+        <div class="turn-header">
+          <div>
+            <p class="turn-kicker">Turn {{ turn.turn_index }} - {{ summary.label }}</p>
+            <h3 style="margin:0;">{{ turn.turn_prompt }}</h3>
+            <div class="metadata-strip" style="margin-top:8px;">
+              <span class="pill">{{ summary.response_count }} responses</span>
+              <span class="pill">Model time: {{ summary.duration_display }}</span>
+              {% if turn.roles %}
+                <span class="pill">Personas active</span>
               {% endif %}
-              <span class="status">chair</span>
-            </span>
-          </button>
+            </div>
+          </div>
+          <div class="turn-actions">
+            <button class="btn secondary" type="button" data-compare-turn="{{ turn.turn_index }}">Compare advisors</button>
+          </div>
+        </div>
+
+        <details>
+          <summary>Turn instruction</summary>
+          <pre>{{ turn.turn_prompt }}</pre>
+        </details>
+
+        <div class="turn-response-grid">
+          <section class="response-section">
+            <h4>Advisor answers</h4>
+            <div class="response-list">
+            {% for adv in turn.advisors %}
+              {{ response_button(adv.provider, adv.answer, turn.turn_index, "advise", adv.role or "", adv.duration_seconds) }}
+            {% endfor %}
+            </div>
+          </section>
+
+          <section class="response-section">
+            <h4>Reviews</h4>
+            <div class="response-list">
+            {% for rev in turn.reviews %}
+              {% set review_role = turn.roles.get(rev.provider) if turn.roles else '' %}
+              {{ response_button(rev.provider, rev.review, turn.turn_index, "review", review_role or "", rev.duration_seconds) }}
+            {% endfor %}
+            </div>
+          </section>
+
+          <section class="response-section">
+            <h4>Chair</h4>
+            <div class="response-list">
+              {{ response_button(turn.chairman.provider, turn.chairman.answer, turn.turn_index, "chair", "chair", turn.chairman.duration_seconds) }}
+            </div>
+          </section>
         </div>
       </section>
-    </div>
-  </div>
-{% endfor %}
+    {% endfor %}
 
-{% if not turns and not job %}
-  <div class="card">
-    <p style="color:var(--muted);">No turn data recorded yet.</p>
+    {% if not turns and not job %}
+      <section class="card">
+        <p style="color:var(--muted); margin:0;">No turn data recorded yet.</p>
+      </section>
+    {% endif %}
   </div>
-{% endif %}
+</div>
 
 <div class="modal-backdrop" id="response-modal" aria-hidden="true">
   <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="response-modal-title">
@@ -174,9 +280,12 @@
   const members = {{ members | tojson }};
   const chairman = "{{ chairman }}";
   const turnsTotal = {{ turns_count }};
+  const hasActiveJob = {{ "true" if job else "false" }};
+  const finalAnswerMarkdown = {{ final_answer_text | tojson }};
   const statusLabel = document.getElementById("status-label");
   const turnLabel = document.getElementById("turn-label");
   const stopBtn = document.getElementById("stop-btn");
+  const liveMatrix = document.getElementById("live-matrix");
   const reloadKey = `conversation-reloaded-${conversationId}`;
   const modal = document.getElementById("response-modal");
   const modalTitle = document.getElementById("response-modal-title");
@@ -186,11 +295,29 @@
   let modalRenderToken = 0;
   window.__roleMap = {};
 
+  function providerFamily(provider) {
+    return String(provider || "model").split("/")[0] || "model";
+  }
+
+  function makeProviderToken(provider) {
+    const family = providerFamily(provider);
+    const token = document.createElement("span");
+    token.className = `provider-token provider-${family}`;
+    token.textContent = family;
+    return token;
+  }
+
   function formatDuration(seconds) {
     if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) {
       return "";
     }
-    return `${Math.max(0, Math.round(Number(seconds)))}s`;
+    const rounded = Math.max(0, Math.round(Number(seconds)));
+    if (rounded < 60) return `${rounded}s`;
+    const minutes = Math.floor(rounded / 60);
+    const remainder = String(rounded % 60).padStart(2, "0");
+    if (minutes < 60) return `${minutes}m ${remainder}s`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
   }
 
   function escapeHtml(text) {
@@ -200,6 +327,21 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function compactText(text, limit = 150) {
+    const compact = String(text || "").replace(/\s+/g, " ").trim();
+    return compact.length > limit ? `${compact.slice(0, limit - 1)}...` : compact;
+  }
+
+  function parseButtonBody(button) {
+    let body = button.dataset.response || "";
+    try {
+      body = JSON.parse(body);
+    } catch (err) {
+      // The value is already plain text when JSON parsing is not needed.
+    }
+    return body;
   }
 
   function renderModalContext(context) {
@@ -216,7 +358,7 @@
     });
   }
 
-  async function renderMarkdown(text, token) {
+  async function renderMarkdownInto(text, token, target) {
     try {
       const res = await fetch("/markdown", {
         method: "POST",
@@ -226,11 +368,11 @@
       if (!res.ok) throw new Error("Markdown render failed");
       const payload = await res.json();
       if (token === modalRenderToken) {
-        modalBody.innerHTML = payload.html || "";
+        target.innerHTML = payload.html || "";
       }
     } catch (err) {
       if (token === modalRenderToken) {
-        modalBody.innerHTML = `<pre>${escapeHtml(text || "")}</pre>`;
+        target.innerHTML = `<pre>${escapeHtml(text || "")}</pre>`;
       }
     }
   }
@@ -243,7 +385,49 @@
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
     modalClose.focus();
-    renderMarkdown(body || "", token);
+    renderMarkdownInto(body || "", token, modalBody);
+  }
+
+  function openCompareModal(turn) {
+    const token = ++modalRenderToken;
+    const buttons = Array.from(document.querySelectorAll("[data-stage='advise']")).filter((button) => {
+      return button.dataset.turn === String(turn);
+    });
+    modalTitle.textContent = `Turn ${turn} advisor comparison`;
+    renderModalContext({ turn, stage: "advise", persona: "comparison" });
+
+    if (!buttons.length) {
+      modalBody.innerHTML = "<p style='color:var(--muted);'>No advisor responses available.</p>";
+    } else {
+      const grid = document.createElement("div");
+      grid.className = "compare-grid";
+      buttons.forEach((button) => {
+        const panel = document.createElement("section");
+        panel.className = "compare-panel";
+
+        const header = document.createElement("div");
+        header.className = "compare-panel-header";
+        header.appendChild(makeProviderToken(button.dataset.title));
+        const title = document.createElement("strong");
+        title.className = "response-provider";
+        title.textContent = button.dataset.title || "Advisor";
+        header.appendChild(title);
+        panel.appendChild(header);
+
+        const body = document.createElement("div");
+        body.className = "compare-panel-body";
+        body.innerHTML = "<p style='color:var(--muted);'>Rendering...</p>";
+        panel.appendChild(body);
+        grid.appendChild(panel);
+        renderMarkdownInto(parseButtonBody(button), token, body);
+      });
+      modalBody.innerHTML = "";
+      modalBody.appendChild(grid);
+    }
+
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+    modalClose.focus();
   }
 
   function closeResponseModal() {
@@ -251,55 +435,71 @@
     modal.setAttribute("aria-hidden", "true");
   }
 
-  function renderStage(containerId, mapping, showRoles = true) {
-    const container = document.getElementById(containerId);
-    container.innerHTML = "";
-    const entries = Object.entries(mapping || {});
-    if (!entries.length) {
-      container.innerHTML = "<p style='color:var(--muted);'>No data yet.</p>";
-      return;
-    }
-    entries.forEach(([provider, statusData]) => {
-      const status = typeof statusData === "string" ? statusData : statusData.status;
-      const duration = typeof statusData === "object" ? formatDuration(statusData.duration_seconds) : "";
-      const role = ((window.__roleMap || {})[provider] || "").toLowerCase();
-      const row = document.createElement("div");
-      row.style.display = "flex";
-      row.style.justifyContent = "space-between";
-      row.style.alignItems = "center";
-      row.style.marginBottom = "4px";
-      const name = document.createElement("span");
-      name.textContent = provider;
-      row.appendChild(name);
+  function makeStatusChip(status, text) {
+    const chip = document.createElement("span");
+    chip.className = `status ${status || ""}`;
+    chip.textContent = text || status || "pending";
+    return chip;
+  }
 
-      const right = document.createElement("div");
-      right.style.display = "flex";
-      right.style.gap = "6px";
-      right.style.alignItems = "center";
-      if (showRoles && role) {
-        const roleChip = document.createElement("span");
-        roleChip.className = `status`;
-        roleChip.style.border = "1px solid rgba(255,255,255,0.15)";
-        roleChip.textContent = role;
-        right.appendChild(roleChip);
-      }
-      if (duration) {
-        const durationEl = document.createElement("span");
-        durationEl.className = "status";
-        durationEl.textContent = duration;
-        right.appendChild(durationEl);
-      }
-      const statusEl = document.createElement("span");
-      statusEl.className = `status ${status}`;
-      statusEl.textContent = status;
-      right.appendChild(statusEl);
-      row.appendChild(right);
-      container.appendChild(row);
+  function makeRunCell(statusData, allowed = true) {
+    const cell = document.createElement("div");
+    cell.className = "run-cell";
+    if (!allowed) {
+      cell.classList.add("empty");
+      cell.textContent = "-";
+      return cell;
+    }
+    const status = typeof statusData === "string" ? statusData : (statusData?.status || "pending");
+    const duration = typeof statusData === "object" ? formatDuration(statusData.duration_seconds) : "";
+    cell.appendChild(makeStatusChip(status));
+    if (duration) {
+      cell.appendChild(makeStatusChip("", duration));
+    }
+    return cell;
+  }
+
+  function renderLiveMatrix(data) {
+    if (!liveMatrix) return;
+    liveMatrix.innerHTML = "";
+
+    const head = document.createElement("div");
+    head.className = "run-matrix-row run-matrix-head";
+    ["Model", "Advise", "Review", "Chair"].forEach((label) => {
+      const cell = document.createElement("div");
+      cell.textContent = label;
+      head.appendChild(cell);
+    });
+    liveMatrix.appendChild(head);
+
+    const providers = [...members];
+    if (chairman && !providers.includes(chairman)) providers.push(chairman);
+
+    providers.forEach((provider) => {
+      const row = document.createElement("div");
+      row.className = "run-matrix-row";
+
+      const providerCell = document.createElement("div");
+      providerCell.className = "run-cell provider-cell";
+      providerCell.appendChild(makeProviderToken(provider));
+      const name = document.createElement("span");
+      name.className = "response-provider";
+      name.textContent = provider;
+      providerCell.appendChild(name);
+      const role = ((window.__roleMap || {})[provider] || "").toLowerCase();
+      if (role) providerCell.appendChild(makeStatusChip("", role));
+      row.appendChild(providerCell);
+
+      row.appendChild(makeRunCell((data.stage1 || {})[provider], members.includes(provider)));
+      row.appendChild(makeRunCell((data.stage2 || {})[provider], members.includes(provider)));
+      row.appendChild(makeRunCell((data.stage3 || {})[provider], provider === chairman));
+      liveMatrix.appendChild(row);
     });
   }
 
   function renderOutput(containerId, mapping, showRoles = true, stageLabel = "", turn = "") {
     const container = document.getElementById(containerId);
+    if (!container) return;
     container.innerHTML = "";
     const entries = Object.entries(mapping || {});
     if (!entries.length) {
@@ -314,27 +514,28 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "response-button";
+
+      const providerLine = document.createElement("span");
+      providerLine.className = "response-provider-line";
+      providerLine.appendChild(makeProviderToken(provider));
       const name = document.createElement("span");
       name.className = "response-provider";
       name.textContent = provider;
-      button.appendChild(name);
+      providerLine.appendChild(name);
+      button.appendChild(providerLine);
+
+      const snippet = document.createElement("span");
+      snippet.className = "response-snippet";
+      snippet.textContent = compactText(message);
+      button.appendChild(snippet);
 
       const meta = document.createElement("span");
       meta.className = "response-meta";
-      if (duration) {
-        const durationChip = document.createElement("span");
-        durationChip.className = "status";
-        durationChip.textContent = duration;
-        meta.appendChild(durationChip);
-      }
-      if (showRoles && role) {
-        const roleChip = document.createElement("span");
-        roleChip.className = "status";
-        roleChip.style.border = "1px solid rgba(255,255,255,0.15)";
-        roleChip.textContent = role;
-        meta.appendChild(roleChip);
-      }
+      if (duration) meta.appendChild(makeStatusChip("", duration));
+      meta.appendChild(makeStatusChip("", stageLabel));
+      if (showRoles && role) meta.appendChild(makeStatusChip("", role));
       button.appendChild(meta);
+
       const persona = showRoles ? role : stageLabel === "chair" ? "chair" : "";
       button.addEventListener("click", () => openResponseModal({
         title: provider,
@@ -351,14 +552,13 @@
   }
 
   function renderStatus(data) {
+    if (!statusLabel || !turnLabel) return;
     const jobStatus = data.job_status || data.status || "pending";
     statusLabel.textContent = jobStatus;
     statusLabel.className = `status ${jobStatus}`;
     turnLabel.textContent = `Turn ${data.turn || 1} / ${data.turns || turnsTotal}`;
     window.__roleMap = data.roles || {};
-    renderStage("stage1-status", data.stage1 || {}, true);
-    renderStage("stage2-status", data.stage2 || {}, true);
-    renderStage("stage3-status", data.stage3 || {}, false);
+    renderLiveMatrix(data);
     renderOutput("stage1-output", data.stage1 || {}, true, "advise", data.turn || 1);
     renderOutput("stage2-output", data.stage2 || {}, true, "review", data.turn || 1);
     renderOutput("stage3-output", data.stage3 || {}, false, "chair", data.turn || 1);
@@ -369,14 +569,6 @@
     } else {
       stopBtn.disabled = true;
       stopBtn.style.display = "none";
-      const liveCard = document.getElementById("live-card");
-      if (liveCard) {
-        liveCard.style.display = "none";
-      }
-      const liveOutputCard = document.getElementById("live-output-card");
-      if (liveOutputCard) {
-        liveOutputCard.style.display = "none";
-      }
     }
   }
 
@@ -409,21 +601,46 @@
 
   document.querySelectorAll("[data-response]").forEach((button) => {
     button.addEventListener("click", () => {
-      let body = button.dataset.response || "";
-      try {
-        body = JSON.parse(body);
-      } catch (err) {
-        // The value is already plain text when JSON parsing is not needed.
-      }
       openResponseModal({
         title: button.dataset.title || "Response",
-        body,
+        body: parseButtonBody(button),
         turn: button.dataset.turn || "",
         stage: button.dataset.stage || "",
         persona: button.dataset.persona || "",
       });
     });
   });
+
+  document.querySelectorAll("[data-compare-turn]").forEach((button) => {
+    button.addEventListener("click", () => openCompareModal(button.dataset.compareTurn));
+  });
+
+  const copyFinalBtn = document.getElementById("copy-final-btn");
+  if (copyFinalBtn) {
+    copyFinalBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(finalAnswerMarkdown || "");
+      } catch (err) {
+        const fallback = document.createElement("textarea");
+        fallback.value = finalAnswerMarkdown || "";
+        fallback.setAttribute("readonly", "readonly");
+        fallback.style.position = "fixed";
+        fallback.style.opacity = "0";
+        document.body.appendChild(fallback);
+        fallback.select();
+        document.execCommand("copy");
+        document.body.removeChild(fallback);
+      }
+      copyFinalBtn.textContent = "Copied";
+      setTimeout(() => { copyFinalBtn.textContent = "Copy Markdown"; }, 1600);
+    });
+  }
+
+  const exportFinalBtn = document.getElementById("export-final-btn");
+  if (exportFinalBtn && finalAnswerMarkdown) {
+    const blob = new Blob([finalAnswerMarkdown], { type: "text/markdown" });
+    exportFinalBtn.href = URL.createObjectURL(blob);
+  }
 
   modalClose.addEventListener("click", closeResponseModal);
   modal.addEventListener("click", (event) => {
@@ -437,6 +654,8 @@
     }
   });
 
-  pollStatus();
+  if (hasActiveJob) {
+    pollStatus();
+  }
 </script>
 {% endblock %}

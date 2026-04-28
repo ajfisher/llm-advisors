@@ -4,6 +4,7 @@ import json
 import shutil
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
@@ -27,6 +28,17 @@ PREFERRED_ADVISOR_OPTIONS = [
     ("ollama/gemma4:latest", "ollama/gemma4:26b", "ollama/gemma4"),
 ]
 PREFERRED_CHAIR_OPTIONS = ("codex/gpt-5.5",)
+TURN_KIND_LABELS = {
+    "baseline": "Baseline",
+    "divergence": "Divergence",
+    "task_solve": "Task Solve",
+    "convergence": "Convergence",
+}
+STAGE_LABELS = {
+    "advise": "Advise",
+    "review": "Review",
+    "chair": "Chair",
+}
 
 
 class ProgressState:
@@ -283,6 +295,174 @@ def _load_turns(conv_dir: Path) -> List[dict]:
     return turns
 
 
+def _duration_seconds(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    if seconds < 0:
+        return None
+    return seconds
+
+
+def _format_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "n/a"
+    rounded = int(round(seconds))
+    if rounded < 60:
+        return f"{rounded}s"
+    minutes, remainder = divmod(rounded, 60)
+    if minutes < 60:
+        return f"{minutes}m {remainder:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m"
+
+
+def _provider_family(provider: str) -> str:
+    return (provider or "").split("/", 1)[0] or "model"
+
+
+def _format_created_at(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    return parsed.strftime("%d %b %Y, %H:%M")
+
+
+def _response_calls(turns: List[dict]) -> List[dict]:
+    calls: List[dict] = []
+    for turn in turns:
+        turn_index = turn.get("turn_index", "")
+        for advisor in turn.get("advisors", []):
+            seconds = _duration_seconds(advisor.get("duration_seconds"))
+            if seconds is not None:
+                calls.append(
+                    {
+                        "turn": turn_index,
+                        "stage": "advise",
+                        "provider": advisor.get("provider", ""),
+                        "seconds": seconds,
+                    }
+                )
+        for review in turn.get("reviews", []):
+            seconds = _duration_seconds(review.get("duration_seconds"))
+            if seconds is not None:
+                calls.append(
+                    {
+                        "turn": turn_index,
+                        "stage": "review",
+                        "provider": review.get("provider", ""),
+                        "seconds": seconds,
+                    }
+                )
+        chairman = turn.get("chairman") or {}
+        seconds = _duration_seconds(chairman.get("duration_seconds"))
+        if seconds is not None:
+            calls.append(
+                {
+                    "turn": turn_index,
+                    "stage": "chair",
+                    "provider": chairman.get("provider", ""),
+                    "seconds": seconds,
+                }
+            )
+    return calls
+
+
+def _conversation_stats(turns: List[dict]) -> dict:
+    calls = _response_calls(turns)
+    stage_totals: Dict[str, dict] = {
+        stage: {"seconds": 0.0, "count": 0, "display": "n/a"}
+        for stage in STAGE_LABELS
+    }
+    families: Dict[str, int] = {}
+
+    for call in calls:
+        stage = str(call["stage"])
+        stage_totals[stage]["seconds"] += float(call["seconds"])
+        stage_totals[stage]["count"] += 1
+        family = _provider_family(str(call["provider"]))
+        families[family] = families.get(family, 0) + 1
+
+    for stage in stage_totals:
+        seconds = stage_totals[stage]["seconds"]
+        stage_totals[stage]["display"] = _format_duration(
+            seconds if stage_totals[stage]["count"] else None
+        )
+
+    total_seconds = sum(float(call["seconds"]) for call in calls)
+    fastest = min(calls, key=lambda item: float(item["seconds"])) if calls else None
+    slowest = max(calls, key=lambda item: float(item["seconds"])) if calls else None
+
+    return {
+        "call_count": len(calls),
+        "total_model_seconds": total_seconds,
+        "total_model_display": _format_duration(total_seconds if calls else None),
+        "average_display": _format_duration(total_seconds / len(calls) if calls else None),
+        "fastest_call": fastest,
+        "fastest_display": _format_duration(float(fastest["seconds"]) if fastest else None),
+        "slowest_call": slowest,
+        "slowest_display": _format_duration(float(slowest["seconds"]) if slowest else None),
+        "stage_totals": stage_totals,
+        "families": families,
+    }
+
+
+def _turn_summaries(turns: List[dict]) -> List[dict]:
+    summaries: List[dict] = []
+    for turn in turns:
+        calls = _response_calls([turn])
+        total_seconds = sum(float(call["seconds"]) for call in calls)
+        advisors = len(turn.get("advisors", []))
+        reviews = len(turn.get("reviews", []))
+        chair_count = 1 if turn.get("chairman") else 0
+        kind = str(turn.get("kind") or "")
+        summaries.append(
+            {
+                "index": turn.get("turn_index"),
+                "kind": kind,
+                "label": TURN_KIND_LABELS.get(kind, kind.replace("_", " ").title() or "Turn"),
+                "duration_display": _format_duration(total_seconds if calls else None),
+                "response_count": advisors + reviews + chair_count,
+            }
+        )
+    return summaries
+
+
+def _turn_views(turns: List[dict]) -> List[dict]:
+    summaries = _turn_summaries(turns)
+    return [
+        {"turn": turn, "summary": summary}
+        for turn, summary in zip(turns, summaries)
+    ]
+
+
+def _conversation_list_item(
+    conversation_id: str,
+    meta: dict,
+    turns: List[dict] | None = None,
+) -> dict:
+    turns = turns or []
+    stats = _conversation_stats(turns)
+    status = "error" if meta.get("error") else meta.get("status", "done")
+    return {
+        "id": conversation_id,
+        "meta": meta,
+        "status": status,
+        "created_at_display": _format_created_at(meta.get("created_at")),
+        "question": meta.get("question", ""),
+        "members": meta.get("members", []),
+        "chair": meta.get("chair") or meta.get("chairman", ""),
+        "turns_count": meta.get("turns", len(turns)),
+        "stats": stats,
+    }
+
+
 @app.route("/", methods=["GET"])
 def home():
     cfg = load_config()
@@ -311,15 +491,17 @@ def list_conversations():
                 continue
             meta = _load_meta(conv_dir)
             if meta:
-                conversations.append({"id": conv_dir.name, "meta": meta})
+                conversations.append(
+                    _conversation_list_item(conv_dir.name, meta, _load_turns(conv_dir))
+                )
 
     # include running jobs without meta yet
     for conv_id, job in jobs.items():
         if not any(c["id"] == conv_id for c in conversations):
             conversations.append(
-                {
-                    "id": conv_id,
-                    "meta": {
+                _conversation_list_item(
+                    conv_id,
+                    {
                         "question": job.question,
                         "members": job.members,
                         "chair": job.chairman,
@@ -328,7 +510,7 @@ def list_conversations():
                         "created_at": "",
                         "status": job.status,
                     },
-                }
+                )
             )
 
     return render_template("conversations.html", conversations=conversations)
@@ -350,8 +532,10 @@ def conversation_detail(conversation_id: str):
     chairman = (meta.get("chair") or meta.get("chairman")) if meta else (job.chairman if job else "")
     turns_count = meta["turns"] if meta else (job.turns if job else 0)
     final_answer_html = None
+    final_answer_text = ""
     if turns:
-        final_answer_html = markdown.markdown(turns[-1]["chairman"]["answer"], extensions=["extra", "sane_lists"])
+        final_answer_text = turns[-1].get("chairman", {}).get("answer", "")
+        final_answer_html = markdown.markdown(final_answer_text, extensions=["extra", "sane_lists"])
 
     return render_template(
         "conversation_detail.html",
@@ -364,6 +548,12 @@ def conversation_detail(conversation_id: str):
         chairman=chairman,
         turns_count=turns_count,
         final_answer_html=final_answer_html,
+        final_answer_text=final_answer_text,
+        stats=_conversation_stats(turns),
+        turn_summaries=_turn_summaries(turns),
+        turn_views=_turn_views(turns),
+        turn_kind_labels=TURN_KIND_LABELS,
+        stage_labels=STAGE_LABELS,
     )
 
 

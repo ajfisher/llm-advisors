@@ -86,6 +86,32 @@ class WebSelectionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("<strong>bold</strong>", response.get_json()["html"])
 
+    def test_conversation_stats_summarize_stage_durations(self):
+        turns = [
+            {
+                "turn_index": 1,
+                "advisors": [
+                    {"provider": "codex/gpt-5.2", "duration_seconds": 10},
+                    {"provider": "gemini/gemini-2.5-flash", "duration_seconds": 20},
+                ],
+                "reviews": [
+                    {"provider": "codex/gpt-5.2", "duration_seconds": 30},
+                ],
+                "chairman": {"provider": "codex/gpt-5.5", "duration_seconds": 40},
+            }
+        ]
+
+        stats = web._conversation_stats(turns)
+        summaries = web._turn_summaries(turns)
+
+        self.assertEqual(stats["call_count"], 4)
+        self.assertEqual(stats["total_model_display"], "1m 40s")
+        self.assertEqual(stats["stage_totals"]["advise"]["display"], "30s")
+        self.assertEqual(stats["stage_totals"]["review"]["display"], "30s")
+        self.assertEqual(stats["stage_totals"]["chair"]["display"], "40s")
+        self.assertEqual(summaries[0]["response_count"], 4)
+        self.assertEqual(summaries[0]["duration_display"], "1m 40s")
+
 
 if __name__ == "__main__":
     unittest.main()
