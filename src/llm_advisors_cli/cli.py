@@ -61,7 +61,7 @@ class CLIProgressRenderer:
         lines.append("Stage 2: Reviews")
         for member in self.members:
             lines.append(self._fmt_line(self.turn, "stage2", member))
-        lines.append("Stage 3: Chairman")
+        lines.append("Stage 3: Chair")
         lines.append(self._fmt_line(self.turn, "stage3", self.chairman))
 
         block = "\n".join(lines) + "\n"
@@ -99,17 +99,24 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         default=_default_members(cfg, ollama_models),
         help=(
             "Council members (default from config). "
-            "Options: codex claude gemini ollama or ollama/<model> "
-            "e.g. 'ollama/llama3.1:8b'"
+            "Options: codex claude gemini ollama or provider/model "
+            "e.g. 'codex/gpt-5.5' 'gemini/gemini-3-flash-preview' 'ollama/llama3.1:8b'"
+        ),
+    )
+    parser.add_argument(
+        "--chair",
+        dest="chairman",
+        metavar="CHAIR",
+        default=cfg.chairman,
+        help=(
+            "Chair provider for final synthesis (default from config). "
+            "Can be codex, claude, gemini, ollama or provider/model."
         ),
     )
     parser.add_argument(
         "--chairman",
-        default=cfg.chairman,
-        help=(
-            "Chairman provider for final synthesis (default from config). "
-            "Can be codex, claude, gemini, ollama or ollama/<model>."
-        ),
+        dest="chairman",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--turns",
@@ -132,6 +139,11 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         type=int,
         default=cfg.max_parallel,
         help="Global max parallel tasks (overrides config.general.max_parallel).",
+    )
+    parser.add_argument(
+        "--no-thinking",
+        action="store_true",
+        help="Prefer faster direct responses by lowering/disabling model thinking where supported.",
     )
     parser.add_argument(
         "--ollama-parallel-mode",
@@ -162,6 +174,8 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
 
 def _apply_cli_overrides(cfg: AdvisorsConfig, args: argparse.Namespace) -> AdvisorsConfig:
     cfg.max_parallel = max(1, args.max_parallel)
+    if args.no_thinking:
+        cfg.thinking_enabled = False
 
     ollama_parallel = cfg.parallelism.get("ollama", ProviderParallelismConfig())
     if args.ollama_parallel_mode:
@@ -205,7 +219,7 @@ def _print_turn_summary(turn, total_turns: int) -> None:
         print(review.raw_review)
         print()
 
-    print("=== STAGE 3: CHAIRMAN ===\n")
+    print("=== STAGE 3: CHAIR ===\n")
     print(f"[{turn.chairman.provider}]")
     print(turn.chairman.answer)
     print()
@@ -215,7 +229,7 @@ def _print_turn_overview(run: ConversationRun) -> None:
     print("\n=== TURN OVERVIEW ===\n")
     for turn in run.turns:
         print(f"Turn {turn.turn_index}:")
-        print(f"- Chairman ({turn.chairman.provider}) answer:\n{turn.chairman.answer}\n")
+        print(f"- Chair ({turn.chairman.provider}) answer:\n{turn.chairman.answer}\n")
 
 
 def main(argv: List[str] | None = None) -> None:

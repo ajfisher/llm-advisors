@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import random
 import sys
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -19,6 +20,7 @@ class AdvisorCall:
     answer: str
     meta: Dict[str, Any]
     role: Optional[str] = None
+    duration_seconds: float | None = None
 
 
 @dataclass
@@ -26,6 +28,7 @@ class ReviewCall:
     provider: str
     prompt: str
     raw_review: str
+    duration_seconds: float | None = None
 
 
 @dataclass
@@ -33,6 +36,7 @@ class ChairmanCall:
     provider: str
     prompt: str
     answer: str
+    duration_seconds: float | None = None
 
 
 @dataclass
@@ -43,15 +47,23 @@ class ProgressEvent:
     provider: Optional[str] = None
     status: Optional[str] = None
     message: Optional[str] = None
+    duration_seconds: float | None = None
 
 
 def alog(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
-def _parse_ollama_member(name: str) -> Optional[str]:
-    """Return model name when member is like 'ollama/<model>'."""
-    if not name.startswith("ollama/"):
+def _provider_base(name: str) -> str:
+    for provider in ("codex", "gemini", "ollama"):
+        if name == provider or name.startswith(f"{provider}/"):
+            return provider
+    return name
+
+
+def _parse_model_member(name: str, provider: str) -> Optional[str]:
+    prefix = f"{provider}/"
+    if not name.startswith(prefix):
         return None
     return name.split("/", 1)[1]
 
@@ -79,7 +91,7 @@ class ConcurrencyLimiter:
 
     @staticmethod
     def _provider_key(name: str) -> str:
-        return "ollama" if name.startswith("ollama/") else name
+        return _provider_base(name)
 
     @asynccontextmanager
     async def limit(self, provider_name: str):
@@ -108,7 +120,7 @@ async def _call_provider_async(
     turn_index: int,
 ) -> ProviderResult:
     providers = get_provider_functions(cfg)
-    base = "ollama" if name.startswith("ollama/") else name
+    base = _provider_base(name)
     fn = providers.get(base)
     if not fn:
         raise ProviderError(name, f"Provider '{name}' is not configured or disabled.")
@@ -116,6 +128,7 @@ async def _call_provider_async(
     async with limiter.limit(base):
         if cancel_event and cancel_event.is_set():
             raise ProviderError(name, "Cancelled by user")
+        started_at = time.perf_counter()
         if progress_handler:
             progress_handler(
                 ProgressEvent(
@@ -128,19 +141,29 @@ async def _call_provider_async(
             )
         try:
             if base == "ollama":
-                model_override = _parse_ollama_member(name)
+                model_override = _parse_model_member(name, "ollama")
                 res = await fn(prompt, cfg, None, model_override, cancel_event)
                 if model_override:
                     res.provider = name
             elif base == "codex":
-                res = await fn(prompt, cfg, None, cancel_event)
+                model_override = _parse_model_member(name, "codex")
+                res = await fn(prompt, cfg, None, model_override, cancel_event)
+                if model_override:
+                    res.provider = name
             elif base == "claude":
                 res = await fn(prompt, cfg, None, cancel_event)
             elif base == "gemini":
-                res = await fn(prompt, cfg, None, cancel_event)
+                model_override = _parse_model_member(name, "gemini")
+                res = await fn(prompt, cfg, None, model_override, cancel_event)
+                if model_override:
+                    res.provider = name
             else:
                 raise ProviderError(name, f"Unknown provider '{name}'")
+            duration_seconds = time.perf_counter() - started_at
+            res.duration_seconds = duration_seconds
+            res.meta["duration_seconds"] = duration_seconds
         except Exception as exc:
+            duration_seconds = time.perf_counter() - started_at
             if progress_handler:
                 progress_handler(
                     ProgressEvent(
@@ -150,6 +173,7 @@ async def _call_provider_async(
                         provider=name,
                         status="error",
                         message=str(exc),
+                        duration_seconds=duration_seconds,
                     )
                 )
             raise
@@ -163,6 +187,7 @@ async def _call_provider_async(
                 provider=name,
                 status="done",
                 message=getattr(res, "answer", None),
+                duration_seconds=res.duration_seconds,
             )
         )
 
@@ -286,7 +311,7 @@ def build_turn_prompt(
     context_chunks = []
     for turn in previous_turns:
         context_chunks.append(
-            f"Turn {turn.turn_index} chairman answer:\n{turn.chairman.answer}"
+            f"Turn {turn.turn_index} chair answer:\n{turn.chairman.answer}"
         )
     context_block = "\n\n".join(context_chunks)
 
@@ -316,7 +341,7 @@ async def stage1_first_opinions_async(
     prompts_by_provider: Optional[Dict[str, str]] = None,
     roles: Optional[Dict[str, str]] = None,
 ) -> List[AdvisorCall]:
-    tasks: List[tuple[int, asyncio.Task[ProviderResult]]] = []
+    tasks: List[tuple[int, str, asyncio.Task[ProviderResult]]] = []
 
     for idx, name in enumerate(member_names):
         if log_progress:
@@ -334,10 +359,10 @@ async def stage1_first_opinions_async(
                 turn_index=turn_index,
             )
         )
-        tasks.append((idx, task))
+        tasks.append((idx, prompt, task))
 
     ordered_results: List[Optional[AdvisorCall]] = [None] * len(tasks)
-    for idx, task in tasks:
+    for idx, prompt, task in tasks:
         res = await task
         ordered_results[idx] = AdvisorCall(
             provider=res.provider,
@@ -345,6 +370,7 @@ async def stage1_first_opinions_async(
             answer=res.answer,
             meta=res.meta,
             role=(roles or {}).get(res.provider),
+            duration_seconds=res.duration_seconds,
         )
         if log_progress:
             alog(f"  - [stage1] {res.provider} done.")
@@ -392,6 +418,7 @@ async def stage2_reviews_async(
             provider=res.provider,
             prompt=review_prompt,
             raw_review=res.answer,
+            duration_seconds=res.duration_seconds,
         )
         if log_progress:
             alog(f"  - [stage2] {res.provider} review done.")
@@ -415,7 +442,7 @@ async def stage3_chairman_async(
 ) -> ChairmanCall:
     prompt = chairman_prompt_override or _build_chairman_prompt(question, opinions, reviews)
     if log_progress:
-        alog(f"  - [stage3] asking chairman '{chairman}' ...")
+        alog(f"  - [stage3] asking chair '{chairman}' ...")
     res = await _call_provider_async(
         chairman,
         prompt,
@@ -427,8 +454,13 @@ async def stage3_chairman_async(
         turn_index=turn_index,
     )
     if log_progress:
-        alog("  - [stage3] chairman done.")
-    return ChairmanCall(provider=res.provider, prompt=prompt, answer=res.answer)
+        alog("  - [stage3] chair done.")
+    return ChairmanCall(
+        provider=res.provider,
+        prompt=prompt,
+        answer=res.answer,
+        duration_seconds=res.duration_seconds,
+    )
 
 
 # Typed forward reference for build_turn_prompt

@@ -3,15 +3,15 @@
 Notes for working on this repo as an automated coding agent.
 
 ## What the tool does
-- CLI orchestrates a three-stage "council of LLMs" flow: first opinions → peer reviews → chairman synthesis.
+- CLI orchestrates a three-stage "council of LLMs" flow: first opinions -> peer reviews -> chair synthesis.
 - All inference is delegated to external CLIs (`codex`, `claude`, `gemini`, `ollama`); this project only builds prompts and shells out.
 - Entry point: `src/llm_advisors_cli/cli.py`; provider commands live in `providers.py`; prompts and flow are in `advisors.py`; config parsing is in `config.py`.
 
 ## Running locally
 - Requires Python 3.11+.
 - Install editable for PATH access: `pip install -e .` then run `llm-advisors "<question>"`.
-- Config file (optional) lives at `~/.config/llm_advisors/config.toml`; defaults are in code (`codex`, `claude`, `gemini`, `ollama` members; `codex` chairman).
-- Use CLI flags `--members`, `--chairman`, `--show-intermediate` to override config at runtime. Ollama model overrides use the `ollama/<model>` naming.
+- Config file (optional) lives at `~/.config/llm_advisors/config.toml`; defaults are in code (`codex/gpt-5.2`, `gemini/gemini-2.5-flash`, `codex/gpt-5.4`, `ollama/gemma4:latest` members; `codex/gpt-5.5` chair).
+- Use CLI flags `--members`, `--chair`, `--show-intermediate` to override config at runtime. Ollama model overrides use the `ollama/<model>` naming.
 
 ## Developing and testing
 - No automated tests yet; quick manual check: point providers at simple echo scripts via `providers.<name>.command` in the config, then run `llm-advisors --show-intermediate "test prompt"` to verify flow without calling real APIs.

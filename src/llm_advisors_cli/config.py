@@ -20,7 +20,7 @@ class ProviderConfig:
     name: str
     enabled: bool = True
     command: str | None = None  # override CLI command if needed
-    model: str | None = None    # mainly for Ollama
+    model: str | None = None    # default model for providers that support -m/model args
     extra_args: List[str] = field(default_factory=list)
 
 
@@ -38,10 +38,18 @@ class LoggingConfig:
 
 @dataclass
 class AdvisorsConfig:
-    members: List[str] = field(default_factory=lambda: ["codex", "claude", "gemini", "ollama"])
-    chairman: str = "codex"
+    members: List[str] = field(
+        default_factory=lambda: [
+            "codex/gpt-5.2",
+            "gemini/gemini-2.5-flash",
+            "codex/gpt-5.4",
+            "ollama/gemma4:latest",
+        ]
+    )
+    chairman: str = "codex/gpt-5.5"
     providers: Dict[str, ProviderConfig] = field(default_factory=dict)
     max_parallel: int = 4
+    thinking_enabled: bool = True
     parallelism: Dict[str, ProviderParallelismConfig] = field(
         default_factory=lambda: {"ollama": ProviderParallelismConfig()}
     )
@@ -64,13 +72,17 @@ def load_config() -> AdvisorsConfig:
     if isinstance(members, list):
         cfg.members = [str(m) for m in members if isinstance(m, str)]
 
-    chairman = general.get("chairman")
+    chairman = general.get("chair") or general.get("chairman")
     if isinstance(chairman, str):
         cfg.chairman = chairman
 
     max_parallel = general.get("max_parallel")
     if isinstance(max_parallel, int):
         cfg.max_parallel = max_parallel
+
+    thinking_enabled = general.get("thinking_enabled")
+    if isinstance(thinking_enabled, bool):
+        cfg.thinking_enabled = thinking_enabled
 
     # providers
     providers_section = data.get("providers", {})

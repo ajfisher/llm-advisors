@@ -1,24 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2 style="margin-top:0; font-family:'Space Grotesk','Inter',sans-serif;">Past conversations</h2>
+  <div class="section-title-row">
+    <div>
+      <p class="page-eyebrow">Workspace</p>
+      <h2 style="margin:0;">Past conversations</h2>
+    </div>
+    <a class="btn secondary" href="{{ url_for('home') }}">New conversation</a>
+  </div>
   {% if conversations %}
+  <div class="conversation-list">
     {% for conv in conversations %}
-      <div style="margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border-subtle);">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <a href="{{ url_for('conversation_detail', conversation_id=conv.id) }}" style="font-weight:700; color:var(--dark-matter);">{{ conv.id }}</a>
-            <div style="color:var(--dark-matter); opacity:0.7; font-size:14px;">{{ conv.meta.question }}</div>
+      <article class="conversation-row">
+        <div>
+          <a class="conversation-link" href="{{ url_for('conversation_detail', conversation_id=conv.id) }}">{{ conv.id }}</a>
+          <p class="conversation-question">{{ conv.question }}</p>
+          <div class="metadata-strip" style="margin-top:8px;">
+            <span class="pill">Advisors: {{ conv.members|length }}</span>
+            <span class="pill">Chair: {{ conv.chair }}</span>
+            <span class="pill">Turns: {{ conv.turns_count }}</span>
+            {% if conv.stats.call_count %}
+              <span class="pill">Model time: {{ conv.stats.total_model_display }}</span>
+            {% endif %}
           </div>
-          <div class="pill">{{ conv.meta.created_at or conv.meta.status or "in progress" }}</div>
         </div>
-        <div style="margin-top:6px;">
-          <span class="pill">Members: {{ conv.meta.members|join(", ") }}</span>
-          <span class="pill">Chairman: {{ conv.meta.chairman }}</span>
-          <span class="pill">Turns: {{ conv.meta.turns }}</span>
+        <div class="conversation-side">
+          <span class="status {{ conv.status }}">{{ conv.status }}</span>
+          {% if conv.created_at_display %}
+            <span class="stat-note">{{ conv.created_at_display }}</span>
+          {% else %}
+            <span class="stat-note">In progress</span>
+          {% endif %}
         </div>
-      </div>
+      </article>
     {% endfor %}
+  </div>
   {% else %}
     <p style="color:var(--dark-matter); opacity:0.7;">No conversations logged yet.</p>
   {% endif %}

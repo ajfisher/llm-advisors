@@ -51,6 +51,7 @@ def _config_summary(cfg: AdvisorsConfig, log_dir: Path, log_enabled: bool) -> Di
         "max_parallel": cfg.max_parallel,
         "ollama_parallel_mode": _default_ollama_mode(cfg).mode,
         "ollama_max_parallel": _default_ollama_mode(cfg).max_parallel,
+        "thinking_enabled": cfg.thinking_enabled,
         "logging_enabled": log_enabled,
         "log_dir": str(log_dir),
     }
@@ -139,7 +140,7 @@ Respond in:
 
     if kind == "task_solve":
         return f"""
-You must address the chairman's tasks from the previous turn.
+You must address the chair's tasks from the previous turn.
 Your role this turn: {role or 'Advisor'}.
 
 Tasks to solve:
@@ -391,6 +392,7 @@ class ConversationLogger:
             "created_at": run.created_at,
             "question": run.question,
             "members": run.members,
+            "chair": run.chairman,
             "chairman": run.chairman,
             "turns": run.turns_requested,
             "config": run.config,
@@ -418,6 +420,7 @@ class ConversationLogger:
                     "answer": adv.answer,
                     "meta": adv.meta,
                     "role": adv.role,
+                    "duration_seconds": adv.duration_seconds,
                 }
                 for adv in turn.opinions
             ],
@@ -426,6 +429,7 @@ class ConversationLogger:
                     "provider": rev.provider,
                     "prompt": rev.prompt,
                     "review": rev.raw_review,
+                    "duration_seconds": rev.duration_seconds,
                 }
                 for rev in turn.reviews
             ],
@@ -433,6 +437,7 @@ class ConversationLogger:
                 "provider": turn.chairman.provider,
                 "prompt": turn.chairman.prompt,
                 "answer": turn.chairman.answer,
+                "duration_seconds": turn.chairman.duration_seconds,
             },
         }
         if turn.summary_object is not None:
@@ -583,7 +588,7 @@ async def run_conversation_async(
                 review_prompt_override=review_prompt,
             )
             if show_progress:
-                alog(f"[turn {turn_index}/{effective_turns}] Asking chairman '{chairman}' to synthesize final answer ...")
+                alog(f"[turn {turn_index}/{effective_turns}] Asking chair '{chairman}' to synthesize final answer ...")
 
             chairman_prompt = _build_chairman_prompt(
                 kind,
