@@ -112,6 +112,51 @@ class WebSelectionTests(unittest.TestCase):
         self.assertEqual(summaries[0]["response_count"], 4)
         self.assertEqual(summaries[0]["duration_display"], "1m 40s")
 
+    def test_progress_snapshot_includes_live_stats_and_timeline(self):
+        state = web.ProgressState(["codex/gpt-5.2"], "codex/gpt-5.5", 2)
+        state.handle(
+            web.ProgressEvent(
+                event="provider",
+                turn=1,
+                stage="stage1",
+                provider="codex/gpt-5.2",
+                status="done",
+                message="advisor",
+                duration_seconds=12,
+            )
+        )
+        state.handle(
+            web.ProgressEvent(
+                event="provider",
+                turn=1,
+                stage="stage2",
+                provider="codex/gpt-5.2",
+                status="done",
+                message="review",
+                duration_seconds=18,
+            )
+        )
+        state.handle(
+            web.ProgressEvent(
+                event="provider",
+                turn=1,
+                stage="stage3",
+                provider="codex/gpt-5.5",
+                status="done",
+                message="chair",
+                duration_seconds=30,
+            )
+        )
+
+        snapshot = state.snapshot()
+
+        self.assertEqual(snapshot["stats"]["call_count"], 3)
+        self.assertEqual(snapshot["stats"]["total_model_display"], "1m 00s")
+        self.assertEqual(snapshot["timeline"][0]["status"], "done")
+        self.assertEqual(snapshot["timeline"][0]["completed_count"], 3)
+        self.assertEqual(snapshot["timeline"][0]["response_count"], 3)
+        self.assertEqual(snapshot["timeline"][1]["status"], "pending")
+
 
 if __name__ == "__main__":
     unittest.main()

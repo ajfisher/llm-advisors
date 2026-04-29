@@ -39,6 +39,21 @@ STAGE_LABELS = {
     "review": "Review",
     "chair": "Chair",
 }
+STAGE_TO_UI_STAGE = {
+    "stage1": "advise",
+    "stage2": "review",
+    "stage3": "chair",
+}
+
+
+def _turn_kind_for_index(turn_index: int, turns: int) -> str:
+    if turn_index == 1:
+        return "baseline"
+    if turn_index == turns:
+        return "convergence"
+    if turn_index == 2:
+        return "divergence"
+    return "task_solve"
 
 
 class ProgressState:
@@ -51,7 +66,7 @@ class ProgressState:
         self.turn = 1
         self.status = "running"
         self.messages: Dict[str, str] = {}
-        self.stage_status: Dict[tuple[int, str, str], Dict[str, str]] = {}
+        self.stage_status: Dict[tuple[int, str, str], Dict[str, object]] = {}
         self.roles: Dict[str, str] = {}
         self._init_turn(self.turn)
 
@@ -65,7 +80,7 @@ class ProgressState:
     def _init_turn(self, turn: int) -> None:
         for stage in ("stage1", "stage2", "stage3"):
             for provider in self._providers_for_stage(stage):
-                self.stage_status[(turn, stage, provider)] = {"status": "pending"}
+                self.stage_status.setdefault((turn, stage, provider), {"status": "pending"})
 
     def handle(self, event: ProgressEvent) -> None:
         if event.event == "turn" and event.status == "start":
@@ -93,22 +108,126 @@ class ProgressState:
         elif event.event == "conversation":
             self.status = "done" if event.status == "done" else event.status or "running"
 
+    def _status_item(self, turn: int, stage: str, provider: str, now: float) -> dict:
+        item = self.stage_status.get((turn, stage, provider), {"status": "pending"}).copy()
+        if item.get("status") == "running" and item.get("started_at"):
+            item["duration_seconds"] = now - float(item["started_at"])
+        item.pop("started_at", None)
+        return item
+
+    def _live_calls(self, now: float) -> List[dict]:
+        calls = []
+        for turn in range(1, self.turns + 1):
+            for stage in ("stage1", "stage2", "stage3"):
+                for provider in self._providers_for_stage(stage):
+                    item = self._status_item(turn, stage, provider, now)
+                    seconds = _duration_seconds(item.get("duration_seconds"))
+                    if seconds is None:
+                        continue
+                    calls.append(
+                        {
+                            "turn": turn,
+                            "stage": STAGE_TO_UI_STAGE[stage],
+                            "provider": provider,
+                            "seconds": seconds,
+                            "status": item.get("status", "pending"),
+                        }
+                    )
+        return calls
+
+    def _live_stats(self, now: float) -> dict:
+        calls = self._live_calls(now)
+        stage_totals: Dict[str, dict] = {
+            stage: {"seconds": 0.0, "count": 0, "display": "n/a"}
+            for stage in STAGE_LABELS
+        }
+        for call in calls:
+            stage = str(call["stage"])
+            stage_totals[stage]["seconds"] += float(call["seconds"])
+            stage_totals[stage]["count"] += 1
+
+        for stage in stage_totals:
+            seconds = stage_totals[stage]["seconds"]
+            stage_totals[stage]["display"] = _format_duration(
+                seconds if stage_totals[stage]["count"] else None
+            )
+
+        total_seconds = sum(float(call["seconds"]) for call in calls)
+        fastest = min(calls, key=lambda item: float(item["seconds"])) if calls else None
+        slowest = max(calls, key=lambda item: float(item["seconds"])) if calls else None
+        done_count = sum(1 for call in calls if call.get("status") == "done")
+        active_count = sum(1 for call in calls if call.get("status") == "running")
+
+        return {
+            "call_count": len(calls),
+            "done_count": done_count,
+            "active_count": active_count,
+            "total_model_seconds": total_seconds,
+            "total_model_display": _format_duration(total_seconds if calls else None),
+            "average_display": _format_duration(total_seconds / len(calls) if calls else None),
+            "fastest_call": fastest,
+            "fastest_display": _format_duration(float(fastest["seconds"]) if fastest else None),
+            "slowest_call": slowest,
+            "slowest_display": _format_duration(float(slowest["seconds"]) if slowest else None),
+            "stage_totals": stage_totals,
+        }
+
+    def _live_timeline(self, now: float) -> List[dict]:
+        timeline = []
+        expected_per_turn = (len(self.members) * 2) + (1 if self.chairman else 0)
+
+        for turn in range(1, self.turns + 1):
+            items = []
+            for stage in ("stage1", "stage2", "stage3"):
+                for provider in self._providers_for_stage(stage):
+                    items.append(self._status_item(turn, stage, provider, now))
+
+            statuses = [str(item.get("status", "pending")) for item in items]
+            completed_count = sum(
+                1 for status in statuses if status in {"done", "error", "cancelled"}
+            )
+            running_count = sum(1 for status in statuses if status == "running")
+            known_seconds = [
+                seconds
+                for item in items
+                if (seconds := _duration_seconds(item.get("duration_seconds"))) is not None
+            ]
+            total_seconds = sum(known_seconds)
+
+            if any(status == "error" for status in statuses):
+                status = "error"
+            elif any(status == "cancelled" for status in statuses):
+                status = "cancelled"
+            elif completed_count == expected_per_turn and expected_per_turn:
+                status = "done"
+            elif running_count or completed_count:
+                status = "running"
+            else:
+                status = "pending"
+
+            kind = _turn_kind_for_index(turn, self.turns)
+            timeline.append(
+                {
+                    "index": turn,
+                    "kind": kind,
+                    "label": TURN_KIND_LABELS.get(kind, "Turn"),
+                    "status": status,
+                    "completed_count": completed_count,
+                    "response_count": expected_per_turn,
+                    "duration_display": _format_duration(total_seconds if known_seconds else None),
+                }
+            )
+
+        return timeline
+
     def snapshot(self) -> Dict[str, object]:
+        now = time.monotonic()
+
         def stage_map(stage: str) -> Dict[str, object]:
-            now = time.monotonic()
             result = {}
             for provider in self._providers_for_stage(stage):
-                item = self.stage_status.get(
-                    (self.turn, stage, provider), {"status": "pending"}
-                ).copy()
-                if item.get("status") == "running" and item.get("started_at"):
-                    item["duration_seconds"] = now - float(item["started_at"])
-                item.pop("started_at", None)
-                result[provider] = item
-            return {
-                provider: data
-                for provider, data in result.items()
-            }
+                result[provider] = self._status_item(self.turn, stage, provider, now)
+            return result
 
         return {
             "status": self.status,
@@ -119,6 +238,8 @@ class ProgressState:
             "stage3": stage_map("stage3"),
             "messages": self.messages,
             "roles": self.roles,
+            "stats": self._live_stats(now),
+            "timeline": self._live_timeline(now),
         }
 
 
@@ -569,12 +690,21 @@ def conversation_status(conversation_id: str):
     # Fallback for completed conversations without an active job
     meta = _load_meta(conv_dir)
     if meta:
+        turns = _load_turns(conv_dir)
         members = meta.get("members", [])
         chairman = meta.get("chair") or meta.get("chairman", "")
         stage1 = {m: {"status": "done"} for m in members}
         stage2 = {m: {"status": "done"} for m in members}
         stage3 = {chairman: {"status": "done"}} if chairman else {}
         status_val = "error" if meta.get("error") else "done"
+        timeline = [
+            {
+                **summary,
+                "status": "done",
+                "completed_count": summary["response_count"],
+            }
+            for summary in _turn_summaries(turns)
+        ]
         return jsonify(
             {
                 "status": status_val,
@@ -585,6 +715,8 @@ def conversation_status(conversation_id: str):
                 "stage2": stage2,
                 "stage3": stage3,
                 "messages": {},
+                "stats": _conversation_stats(turns),
+                "timeline": timeline,
             }
         )
 

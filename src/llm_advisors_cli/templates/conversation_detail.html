@@ -66,23 +66,23 @@
   <div class="stats-strip">
     <div class="stat-tile">
       <span class="stat-label">Model Time</span>
-      <span class="stat-value">{{ stats.total_model_display }}</span>
-      <span class="stat-note">{{ stats.call_count }} completed calls</span>
+      <span class="stat-value" id="model-time-value">{{ stats.total_model_display }}</span>
+      <span class="stat-note" id="model-time-note">{{ stats.call_count }} completed calls</span>
     </div>
     <div class="stat-tile">
       <span class="stat-label">Average Call</span>
-      <span class="stat-value">{{ stats.average_display }}</span>
+      <span class="stat-value" id="average-call-value">{{ stats.average_display }}</span>
       <span class="stat-note">Across advisors, reviews, and chair</span>
     </div>
     <div class="stat-tile">
       <span class="stat-label">Fastest</span>
-      <span class="stat-value">{{ stats.fastest_display }}</span>
-      <span class="stat-note">{{ stats.fastest_call.provider if stats.fastest_call else "Awaiting data" }}</span>
+      <span class="stat-value" id="fastest-call-value">{{ stats.fastest_display }}</span>
+      <span class="stat-note" id="fastest-call-note">{{ stats.fastest_call.provider if stats.fastest_call else "Awaiting data" }}</span>
     </div>
     <div class="stat-tile">
       <span class="stat-label">Slowest</span>
-      <span class="stat-value">{{ stats.slowest_display }}</span>
-      <span class="stat-note">{{ stats.slowest_call.provider if stats.slowest_call else "Awaiting data" }}</span>
+      <span class="stat-value" id="slowest-call-value">{{ stats.slowest_display }}</span>
+      <span class="stat-note" id="slowest-call-note">{{ stats.slowest_call.provider if stats.slowest_call else "Awaiting data" }}</span>
     </div>
   </div>
 </section>
@@ -91,8 +91,8 @@
   <aside class="card run-sidebar">
     <section class="sidebar-section">
       <h3 class="sidebar-title">Run Timeline</h3>
-      {% if turn_summaries %}
-        <div class="timeline-list">
+      <div class="timeline-list" id="timeline-list">
+        {% if turn_summaries %}
           {% for item in turn_summaries %}
             <a class="timeline-link" href="#turn-{{ item.index }}">
               <span class="timeline-index">{{ item.index }}</span>
@@ -100,12 +100,22 @@
                 {{ item.label }}
                 <span class="timeline-meta">{{ item.response_count }} responses - {{ item.duration_display }}</span>
               </span>
+              <span class="status done">done</span>
             </a>
           {% endfor %}
-        </div>
-      {% else %}
-        <p class="stat-note">Turn data will appear as the run completes.</p>
-      {% endif %}
+        {% else %}
+          {% for turn_number in range(1, turns_count + 1) %}
+            <a class="timeline-link" href="#turn-{{ turn_number }}">
+              <span class="timeline-index">{{ turn_number }}</span>
+              <span class="timeline-main">
+                Turn {{ turn_number }}
+                <span class="timeline-meta">0 responses - n/a</span>
+              </span>
+              <span class="status pending">pending</span>
+            </a>
+          {% endfor %}
+        {% endif %}
+      </div>
     </section>
 
     <section class="sidebar-section">
@@ -129,7 +139,7 @@
         {% for stage, label in stage_labels.items() %}
           <div class="stage-breakdown-row">
             <span>{{ label }}</span>
-            <strong>{{ stats.stage_totals[stage].display }}</strong>
+            <strong id="stage-time-{{ stage }}">{{ stats.stage_totals[stage].display }}</strong>
           </div>
         {% endfor %}
       </div>
@@ -286,6 +296,7 @@
   const turnLabel = document.getElementById("turn-label");
   const stopBtn = document.getElementById("stop-btn");
   const liveMatrix = document.getElementById("live-matrix");
+  const timelineList = document.getElementById("timeline-list");
   const reloadKey = `conversation-reloaded-${conversationId}`;
   const modal = document.getElementById("response-modal");
   const modalTitle = document.getElementById("response-modal-title");
@@ -318,6 +329,46 @@
     if (minutes < 60) return `${minutes}m ${remainder}s`;
     const hours = Math.floor(minutes / 60);
     return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
+  }
+
+  function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = value;
+    }
+  }
+
+  function providerNote(call) {
+    if (!call || !call.provider) {
+      return "Awaiting data";
+    }
+    const bits = [call.provider];
+    if (call.turn) bits.push(`turn ${call.turn}`);
+    if (call.stage) bits.push(call.stage);
+    return bits.join(" - ");
+  }
+
+  function renderLiveStats(stats) {
+    if (!stats) return;
+    setText("model-time-value", stats.total_model_display || "n/a");
+    setText("average-call-value", stats.average_display || "n/a");
+    setText("fastest-call-value", stats.fastest_display || "n/a");
+    setText("fastest-call-note", providerNote(stats.fastest_call));
+    setText("slowest-call-value", stats.slowest_display || "n/a");
+    setText("slowest-call-note", providerNote(stats.slowest_call));
+
+    const done = Number(stats.done_count || 0);
+    const active = Number(stats.active_count || 0);
+    const total = Number(stats.call_count || 0);
+    const note = active
+      ? `${done} done, ${active} running`
+      : `${done || total} completed calls`;
+    setText("model-time-note", note);
+
+    ["advise", "review", "chair"].forEach((stage) => {
+      const stageStats = (stats.stage_totals || {})[stage] || {};
+      setText(`stage-time-${stage}`, stageStats.display || "n/a");
+    });
   }
 
   function escapeHtml(text) {
@@ -442,6 +493,37 @@
     return chip;
   }
 
+  function renderLiveTimeline(timeline) {
+    if (!timelineList || !Array.isArray(timeline)) return;
+    timelineList.innerHTML = "";
+    timeline.forEach((item) => {
+      const link = document.createElement("a");
+      link.className = "timeline-link";
+      link.href = `#turn-${item.index}`;
+
+      const index = document.createElement("span");
+      index.className = "timeline-index";
+      index.textContent = item.index;
+      link.appendChild(index);
+
+      const main = document.createElement("span");
+      main.className = "timeline-main";
+      main.textContent = item.label || `Turn ${item.index}`;
+
+      const meta = document.createElement("span");
+      meta.className = "timeline-meta";
+      const completed = Number(item.completed_count || 0);
+      const expected = Number(item.response_count || 0);
+      const responseLabel = expected ? `${completed}/${expected} responses` : "0 responses";
+      meta.textContent = `${responseLabel} - ${item.duration_display || "n/a"}`;
+      main.appendChild(meta);
+      link.appendChild(main);
+
+      link.appendChild(makeStatusChip(item.status || "pending"));
+      timelineList.appendChild(link);
+    });
+  }
+
   function makeRunCell(statusData, allowed = true) {
     const cell = document.createElement("div");
     cell.className = "run-cell";
@@ -558,6 +640,8 @@
     statusLabel.className = `status ${jobStatus}`;
     turnLabel.textContent = `Turn ${data.turn || 1} / ${data.turns || turnsTotal}`;
     window.__roleMap = data.roles || {};
+    renderLiveStats(data.stats);
+    renderLiveTimeline(data.timeline);
     renderLiveMatrix(data);
     renderOutput("stage1-output", data.stage1 || {}, true, "advise", data.turn || 1);
     renderOutput("stage2-output", data.stage2 || {}, true, "review", data.turn || 1);
