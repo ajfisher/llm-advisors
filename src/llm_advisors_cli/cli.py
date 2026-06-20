@@ -100,7 +100,8 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         help=(
             "Council members (default from config). "
             "Options: codex claude gemini ollama or provider/model "
-            "e.g. 'codex/gpt-5.5' 'gemini/gemini-3-flash-preview' 'ollama/llama3.1:8b'"
+            "e.g. 'codex/gpt-5.5' 'claude/sonnet' "
+            "'gemini/gemini-3-flash-preview' 'ollama/llama3.1:8b'"
         ),
     )
     parser.add_argument(

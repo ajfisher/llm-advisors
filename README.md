@@ -33,8 +33,8 @@ It shells out to Codex/Claude/Gemini/Ollama and orchestrates up to 4 turns:
 
 Roles rotate after turn 1 to avoid stagnation. All prompts/results are logged
 per conversation; the web UI shows live status and stores artefacts for later
-review. Ollama models on your machine are discovered automatically for
-selection in the web UI.
+review. Claude aliases, Codex/Gemini defaults, and Ollama models on your
+machine are shown as model options in the web UI.
 
 [![Screenshot of LLM Advisors](https://img.youtube.com/vi/7Xft86ihGfs/0.jpg)](https://www.youtube.com/watch?v=7Xft86ihGfs)
 
@@ -92,7 +92,7 @@ Useful flags:
 
 - `--members`: override which providers answer/review (defaults to config).
   Accepts `codex claude gemini ollama` and provider model overrides like
-  `codex/gpt-5.5`, `gemini/gemini-3-flash-preview`, and
+  `codex/gpt-5.5`, `claude/sonnet`, `gemini/gemini-3-flash-preview`, and
   `ollama/llama3.1:8b`.
 - `--chair`: choose who synthesises the final answer (defaults to config).
 - `--turns`: run multiple council rounds (opinions -> reviews -> chair) and
@@ -118,8 +118,8 @@ llm-advisors --members codex claude \
     --chair claude "How do I debounce an async function?"
 
 # Ask specific model variants, show intermediate output
-llm-advisors --members codex/gpt-5.5 gemini/gemini-3-flash-preview ollama/llama3.1:8b \
-    --chair codex/gpt-5.5 --show-intermediate "How does a vector work?"
+llm-advisors --members codex/gpt-5.5 claude/sonnet gemini/gemini-3-flash-preview ollama/llama3.1:8b \
+    --chair claude/opus --show-intermediate "How does a vector work?"
 ```
 
 If a provider CLI fails, you’ll see a `ProviderError` with the CLI exit code
@@ -155,9 +155,9 @@ python -m llm_advisors_cli.web
 
 It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
 advisors/chair/turns, watch live per-member status (with a stop control), and
-browse/delete past runs from `conversations/`. Codex, Gemini, and Ollama model
-variants are shown as `provider/<model>` options where they can be discovered
-locally.
+browse/delete past runs from `conversations/`. Codex, Claude, Gemini, and
+Ollama model variants are shown as `provider/<model>` options where they can be
+discovered locally or inferred from supported aliases/configuration.
 
 ### Screenshots
 
@@ -201,6 +201,7 @@ extra_args = ["--no-color"]         # appended before the prompt
 
 [providers.claude]
 enabled = true
+model = "sonnet"                   # default model when using bare `claude`
 extra_args = ["-p"]                 # defaults used if not provided
 
 [providers.gemini]
@@ -220,7 +221,8 @@ enabled = true
 base_dir = "conversations"
 ```
 
-Runtime flags always win over config values. To use a specific Ollama model
-once, pass `--members ollama/llama3.1:8b` (or set `chair` to `ollama/...`).
+Runtime flags always win over config values. To use a specific Claude or
+Ollama model once, pass `--members claude/sonnet ollama/llama3.1:8b` (or set
+`chair` to `claude/...` / `ollama/...`).
 You can also point `command` to a mock script if you want to stub providers
 during development.

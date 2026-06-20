@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from llm_advisors_cli.config import AdvisorsConfig
+from llm_advisors_cli.config import AdvisorsConfig, ProviderConfig
 from llm_advisors_cli import web
 
 
@@ -9,6 +9,7 @@ class WebSelectionTests(unittest.TestCase):
     def _patch_discovery(self):
         return (
             patch("llm_advisors_cli.web.discover_codex_models", return_value=["gpt-5.5", "gpt-5.2", "gpt-5.4"]),
+            patch("llm_advisors_cli.web.discover_claude_models", return_value=["sonnet", "opus", "haiku"]),
             patch("llm_advisors_cli.web.discover_gemini_models", return_value=["gemini-2.5-flash"]),
             patch("llm_advisors_cli.web.discover_ollama_models", return_value=["gemma4:latest", "llama3.1:8b"]),
         )
@@ -16,7 +17,7 @@ class WebSelectionTests(unittest.TestCase):
     def test_home_uses_advisor_slots_without_bare_provider_options(self):
         cfg = AdvisorsConfig(members=["codex", "claude", "gemini"], chairman="codex")
         patches = self._patch_discovery()
-        with patch("llm_advisors_cli.web.load_config", return_value=cfg), patches[0], patches[1], patches[2]:
+        with patch("llm_advisors_cli.web.load_config", return_value=cfg), patches[0], patches[1], patches[2], patches[3]:
             response = web.app.test_client().get("/")
 
         html = response.get_data(as_text=True)
@@ -30,6 +31,9 @@ class WebSelectionTests(unittest.TestCase):
         self.assertIn('<option value="codex/gpt-5.5"', html)
         self.assertIn('<option value="codex/gpt-5.2"', html)
         self.assertIn('<option value="codex/gpt-5.4"', html)
+        self.assertIn('<option value="claude/sonnet"', html)
+        self.assertIn('<option value="claude/opus"', html)
+        self.assertIn('<option value="claude/haiku"', html)
         self.assertIn('<option value="gemini/gemini-2.5-flash"', html)
         self.assertIn('<option value="ollama/gemma4:latest"', html)
         self.assertIn('<option value="codex/gpt-5.2" selected', html)
@@ -60,6 +64,7 @@ class WebSelectionTests(unittest.TestCase):
             patches[0],
             patches[1],
             patches[2],
+            patches[3],
         ):
             response = client.post(
                 "/conversations",
@@ -79,6 +84,24 @@ class WebSelectionTests(unittest.TestCase):
         self.assertEqual(created["chair"], "gemini/gemini-2.5-flash")
         self.assertEqual(created["turns"], 2)
         self.assertTrue(created["started"])
+
+    def test_available_members_includes_configured_claude_models(self):
+        cfg = AdvisorsConfig(
+            members=["claude/custom-member"],
+            chairman="claude/custom-chair",
+        )
+        cfg.providers["claude"] = ProviderConfig(name="claude", model="sonnet")
+        patches = self._patch_discovery()
+
+        with patches[0], patches[1], patches[2], patches[3]:
+            members = web._available_members(cfg)
+
+        self.assertIn("claude/sonnet", members)
+        self.assertIn("claude/opus", members)
+        self.assertIn("claude/haiku", members)
+        self.assertIn("claude/custom-member", members)
+        self.assertIn("claude/custom-chair", members)
+        self.assertNotIn("claude", members)
 
     def test_markdown_endpoint_matches_conversation_rendering(self):
         response = web.app.test_client().post("/markdown", json={"text": "**bold**"})
