@@ -24,6 +24,11 @@ DEFAULT_CODEX_MODELS = [
     "gpt-5.3-codex-spark",
     "gpt-5.2",
 ]
+DEFAULT_CLAUDE_MODELS = [
+    "sonnet",
+    "opus",
+    "haiku",
+]
 DEFAULT_GEMINI_MODELS = [
     "auto-gemini-3",
     "auto-gemini-2.5",
@@ -210,15 +215,23 @@ async def ask_claude(
     prompt: str,
     cfg: AdvisorsConfig,
     cwd: Optional[str] = None,
+    model_override: Optional[str] = None,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> ProviderResult:
     pcfg = _merge_provider_config("claude", cfg)
+    model = model_override or pcfg.model
     cmd = [pcfg.command or "claude"]
-    cmd.extend(pcfg.extra_args or ["-p"])
+    if not _has_cli_option(pcfg.extra_args, {"-p", "--print"}):
+        cmd.append("-p")
+    if pcfg.extra_args:
+        cmd.extend(pcfg.extra_args)
+    if model:
+        cmd.extend(["--model", model])
     cmd.append(prompt)
     raw = await _run_cmd_async("claude", cmd, cwd=cwd, cancel_event=cancel_event)
     answer = sanitize_provider_output(raw)
-    return ProviderResult("claude", answer, {})
+    provider_name = f"claude/{model}" if model_override and model else "claude"
+    return ProviderResult(provider_name, answer, {"model": model})
 
 
 async def ask_gemini(
@@ -325,6 +338,12 @@ def discover_codex_models(cfg: AdvisorsConfig) -> List[str]:
 
     configured = cfg.providers.get("codex", ProviderConfig(name="codex")).model
     return _dedupe_models(([configured] if configured else []) + DEFAULT_CODEX_MODELS)
+
+
+def discover_claude_models(cfg: AdvisorsConfig) -> List[str]:
+    """Return Claude Code model aliases plus any configured default."""
+    configured = cfg.providers.get("claude", ProviderConfig(name="claude")).model
+    return _dedupe_models(([configured] if configured else []) + DEFAULT_CLAUDE_MODELS)
 
 
 def _gemini_package_root(command: str) -> Optional[Path]:

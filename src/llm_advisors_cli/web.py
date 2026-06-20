@@ -13,7 +13,12 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, url
 from .advisors import ProgressEvent
 from .config import AdvisorsConfig, load_config
 from .conversation import generate_conversation_id, run_conversation
-from .providers import discover_codex_models, discover_gemini_models, discover_ollama_models
+from .providers import (
+    discover_claude_models,
+    discover_codex_models,
+    discover_gemini_models,
+    discover_ollama_models,
+)
 import markdown
 
 app = Flask(__name__)
@@ -308,6 +313,9 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
     for model in discover_codex_models(cfg):
         options.add(f"codex/{model}")
 
+    for model in discover_claude_models(cfg):
+        options.add(f"claude/{model}")
+
     for model in discover_gemini_models(cfg):
         options.add(f"gemini/{model}")
 
@@ -316,11 +324,11 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
     for model in ollama_models:
         options.add(f"ollama/{model}")
 
-    # Honour explicitly configured ollama/<model> entries
+    # Honour explicitly configured local or alias-backed model entries.
     for name in cfg.members:
-        if name.startswith("ollama/"):
+        if name.startswith(("claude/", "ollama/")):
             options.add(name)
-    if cfg.chairman.startswith("ollama/"):
+    if cfg.chairman.startswith(("claude/", "ollama/")):
         options.add(cfg.chairman)
 
     return sorted(options, key=_member_sort_key)
