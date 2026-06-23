@@ -4,7 +4,8 @@ A small CLI and web app that lets you run a "board of LLMs as advisors" using:
 
 - Codex (OpenAI CLI)
 - Claude Code
-- Gemini CLI
+- Antigravity CLI
+- Gemini CLI (legacy / enterprise)
 - Ollama (local models)
 
 It **does not** use any extra API keys – it shells out to the official CLIs,
@@ -20,7 +21,8 @@ via OpenRouter/API keys, it coordinates multiple CLIs you already use.
 ## 1. What it does
 
 Run a structured, multi-turn “council” of LLMs via the CLIs you already have.
-It shells out to Codex/Claude/Gemini/Ollama and orchestrates up to 4 turns:
+It shells out to Codex/Claude/Antigravity/Gemini/Ollama and orchestrates up to
+4 turns:
 
 - **Turn 1 - baseline**: advisors answer freely; chair synthesises and
   produces a summary object.
@@ -33,8 +35,10 @@ It shells out to Codex/Claude/Gemini/Ollama and orchestrates up to 4 turns:
 
 Roles rotate after turn 1 to avoid stagnation. All prompts/results are logged
 per conversation; the web UI shows live status and stores artefacts for later
-review. Claude aliases, Codex/Gemini defaults, and Ollama models on your
-machine are shown as model options in the web UI.
+review. Claude aliases, Codex/Antigravity defaults, and Ollama models on your
+machine are shown as model options in the web UI. Gemini CLI remains available
+for eligible accounts, but consumer Gemini CLI usage has moved to Antigravity
+CLI.
 
 [![Screenshot of LLM Advisors](https://img.youtube.com/vi/7Xft86ihGfs/0.jpg)](https://www.youtube.com/watch?v=7Xft86ihGfs)
 
@@ -50,7 +54,8 @@ You’ll need:
 - A working install of the following CLIs (pick the ones you care about):
   - `codex` (OpenAI / ChatGPT CLI)
   - `claude` (Claude Code CLI)
-  - `gemini` (Gemini CLI)
+  - `agy` (Antigravity CLI)
+  - `gemini` (Gemini CLI, legacy / enterprise)
   - `ollama` (local LLM runtime)
 
 Each CLI must already be:
@@ -58,7 +63,14 @@ Each CLI must already be:
 - Installed on your `$PATH`
 - Logged in / configured to use whatever account or plan you have
 - Working from the shell by itself (e.g. `codex "hello"`, `claude -p "hello"`,
-  `gemini -p "hello"`, `ollama run llama3.2 "hello"`)
+  `agy -p "hello"`, `ollama run llama3.2 "hello"`)
+
+Google announced that Gemini CLI stopped serving requests for unpaid tier,
+Google AI Pro, and Ultra users on June 18, 2026, and moved those users to
+Antigravity CLI:
+https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/
+Keep using the `gemini` provider only if your local Gemini CLI is backed by an
+eligible Standard, Enterprise, or API-key setup.
 
 For Ollama, you’ll also need at least one model pulled, for example:
 
@@ -91,8 +103,8 @@ llm-advisors "When should I use vector search vs full text search?"
 Useful flags:
 
 - `--members`: override which providers answer/review (defaults to config).
-  Accepts `codex claude gemini ollama` and provider model overrides like
-  `codex/gpt-5.5`, `claude/sonnet`, `gemini/gemini-3-flash-preview`, and
+  Accepts `codex claude agy gemini ollama` and provider model overrides like
+  `codex/gpt-5.5`, `claude/sonnet`, `agy/Gemini 3.5 Flash (Medium)`, and
   `ollama/llama3.1:8b`.
 - `--chair`: choose who synthesises the final answer (defaults to config).
 - `--turns`: run multiple council rounds (opinions -> reviews -> chair) and
@@ -118,7 +130,7 @@ llm-advisors --members codex claude \
     --chair claude "How do I debounce an async function?"
 
 # Ask specific model variants, show intermediate output
-llm-advisors --members codex/gpt-5.5 claude/sonnet gemini/gemini-3-flash-preview ollama/llama3.1:8b \
+llm-advisors --members codex/gpt-5.5 claude/sonnet "agy/Gemini 3.5 Flash (Low)" ollama/llama3.1:8b \
     --chair claude/opus --show-intermediate "How does a vector work?"
 ```
 
@@ -155,9 +167,9 @@ python -m llm_advisors_cli.web
 
 It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
 advisors/chair/turns, watch live per-member status (with a stop control), and
-browse/delete past runs from `conversations/`. Codex, Claude, Gemini, and
-Ollama model variants are shown as `provider/<model>` options where they can be
-discovered locally or inferred from supported aliases/configuration.
+browse/delete past runs from `conversations/`. Codex, Claude, Antigravity,
+Gemini, and Ollama model variants are shown as `provider/<model>` options where
+they can be discovered locally or inferred from supported aliases/configuration.
 
 ### Screenshots
 
@@ -176,7 +188,7 @@ Conversation detail with final answer plus turn artefacts:
 ## 5. Configuration
 
 Configuration is optional. Defaults live in code (`codex/gpt-5.2`,
-`gemini/gemini-2.5-flash`, `codex/gpt-5.4`, `ollama/gemma4:latest` as
+`agy/Gemini 3.5 Flash (Medium)`, `codex/gpt-5.4`, `ollama/gemma4:latest` as
 members; `codex/gpt-5.5` as chair). If present, config is read from:
 
 `~/.config/llm_advisors/config.toml`
@@ -186,7 +198,7 @@ Structure:
 ```toml
 [general]
 # order matters for labelling A/B/C/… 
-members = ["codex/gpt-5.2", "gemini/gemini-2.5-flash", "codex/gpt-5.4", "ollama/gemma4:latest"]
+members = ["codex/gpt-5.2", "agy/Gemini 3.5 Flash (Medium)", "codex/gpt-5.4", "ollama/gemma4:latest"]
 
 # who synthesises the final answer
 chair = "codex/gpt-5.5"
@@ -204,8 +216,14 @@ enabled = true
 model = "sonnet"                   # default model when using bare `claude`
 extra_args = ["-p"]                 # defaults used if not provided
 
+[providers.agy]
+enabled = true
+command = "agy"
+model = "Gemini 3.5 Flash (Medium)" # default model when using bare `agy`
+extra_args = ["--print-timeout", "5m"]
+
 [providers.gemini]
-enabled = false                     # example of disabling one provider
+enabled = false                     # legacy; requires eligible Gemini CLI access
 model = "gemini-3-flash-preview"   # default model when using bare `gemini`
 
 [providers.ollama]
@@ -221,8 +239,9 @@ enabled = true
 base_dir = "conversations"
 ```
 
-Runtime flags always win over config values. To use a specific Claude or
-Ollama model once, pass `--members claude/sonnet ollama/llama3.1:8b` (or set
-`chair` to `claude/...` / `ollama/...`).
+Runtime flags always win over config values. To use a specific Antigravity,
+Claude, or Ollama model once, pass
+`--members "agy/Gemini 3.5 Flash (Low)" claude/sonnet ollama/llama3.1:8b` (or
+set `chair` to `agy/...`, `claude/...`, or `ollama/...`).
 You can also point `command` to a mock script if you want to stub providers
 during development.

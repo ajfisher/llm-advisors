@@ -16,6 +16,10 @@ from .exceptions import ProviderError
 
 
 DEFAULT_CODEX_MODEL = "gpt-5.5"
+DEFAULT_AGY_MODEL = "Gemini 3.5 Flash (Medium)"
+DEFAULT_AGY_MODELS = [
+    DEFAULT_AGY_MODEL,
+]
 DEFAULT_CODEX_MODELS = [
     "gpt-5.5",
     "gpt-5.4",
@@ -211,6 +215,29 @@ async def ask_codex(
     return ProviderResult(provider_name, answer, {"model": model})
 
 
+async def ask_agy(
+    prompt: str,
+    cfg: AdvisorsConfig,
+    cwd: Optional[str] = None,
+    model_override: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
+) -> ProviderResult:
+    pcfg = _merge_provider_config("agy", cfg)
+    model = model_override or pcfg.model
+    cmd = [pcfg.command or "agy"]
+    if not _has_cli_option(pcfg.extra_args, {"-p", "--print", "--prompt"}):
+        cmd.append("-p")
+    if pcfg.extra_args:
+        cmd.extend(pcfg.extra_args)
+    if model:
+        cmd.extend(["--model", model])
+    cmd.append(prompt)
+    raw = await _run_cmd_async("agy", cmd, cwd=cwd, cancel_event=cancel_event)
+    answer = sanitize_provider_output(raw)
+    provider_name = f"agy/{model}" if model_override and model else "agy"
+    return ProviderResult(provider_name, answer, {"model": model})
+
+
 async def ask_claude(
     prompt: str,
     cfg: AdvisorsConfig,
@@ -292,6 +319,7 @@ ProviderFn = callable
 def get_provider_functions(cfg: AdvisorsConfig):
     """Return a {name: async callable} mapping with config applied."""
     fns = {
+        "agy": ask_agy,
         "codex": ask_codex,
         "claude": ask_claude,
         "gemini": ask_gemini,
@@ -313,6 +341,23 @@ def _dedupe_models(models: List[str]) -> List[str]:
             seen.add(model)
             result.append(model)
     return result
+
+
+def discover_agy_models(cfg: AdvisorsConfig) -> List[str]:
+    """Return Antigravity CLI model names from `agy models` plus safe defaults."""
+    pcfg = cfg.providers.get("agy", ProviderConfig(name="agy"))
+    configured = [pcfg.model] if pcfg.model else []
+    cmd = [pcfg.command or "agy", "models"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        models = [
+            sanitize_provider_output(line)
+            for line in (out.stdout or "").splitlines()
+            if sanitize_provider_output(line)
+        ]
+        return _dedupe_models(configured + models + DEFAULT_AGY_MODELS)
+    except Exception:
+        return _dedupe_models(configured + DEFAULT_AGY_MODELS)
 
 
 def discover_codex_models(cfg: AdvisorsConfig) -> List[str]:

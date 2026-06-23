@@ -14,6 +14,7 @@ from .advisors import ProgressEvent
 from .config import AdvisorsConfig, load_config
 from .conversation import generate_conversation_id, run_conversation
 from .providers import (
+    discover_agy_models,
     discover_claude_models,
     discover_codex_models,
     discover_gemini_models,
@@ -25,10 +26,10 @@ app = Flask(__name__)
 app.secret_key = "llm-advisors"
 
 NONE_ADVISOR_VALUE = "__none__"
-BARE_WEB_PROVIDERS = {"codex", "claude", "gemini", "ollama"}
+BARE_WEB_PROVIDERS = {"agy", "codex", "claude", "gemini", "ollama"}
 PREFERRED_ADVISOR_OPTIONS = [
     ("codex/gpt-5.2",),
-    ("gemini/gemini-2.5-flash",),
+    ("agy/Gemini 3.5 Flash (Medium)",),
     ("codex/gpt-5.4",),
     ("ollama/gemma4:latest", "ollama/gemma4:26b", "ollama/gemma4"),
 ]
@@ -313,6 +314,9 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
     for model in discover_codex_models(cfg):
         options.add(f"codex/{model}")
 
+    for model in discover_agy_models(cfg):
+        options.add(f"agy/{model}")
+
     for model in discover_claude_models(cfg):
         options.add(f"claude/{model}")
 
@@ -326,16 +330,16 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
 
     # Honour explicitly configured local or alias-backed model entries.
     for name in cfg.members:
-        if name.startswith(("claude/", "ollama/")):
+        if name.startswith(("agy/", "claude/", "ollama/")):
             options.add(name)
-    if cfg.chairman.startswith(("claude/", "ollama/")):
+    if cfg.chairman.startswith(("agy/", "claude/", "ollama/")):
         options.add(cfg.chairman)
 
     return sorted(options, key=_member_sort_key)
 
 
 def _member_sort_key(member: str) -> tuple[int, str]:
-    order = {"codex": 0, "claude": 1, "gemini": 2, "ollama": 3}
+    order = {"codex": 0, "agy": 1, "claude": 2, "gemini": 3, "ollama": 4}
     base = member.split("/", 1)[0]
     return (order.get(base, 99), member)
 

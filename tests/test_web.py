@@ -9,15 +9,16 @@ class WebSelectionTests(unittest.TestCase):
     def _patch_discovery(self):
         return (
             patch("llm_advisors_cli.web.discover_codex_models", return_value=["gpt-5.5", "gpt-5.2", "gpt-5.4"]),
+            patch("llm_advisors_cli.web.discover_agy_models", return_value=["Gemini 3.5 Flash (Medium)", "Gemini 3.5 Flash (Low)"]),
             patch("llm_advisors_cli.web.discover_claude_models", return_value=["sonnet", "opus", "haiku"]),
             patch("llm_advisors_cli.web.discover_gemini_models", return_value=["gemini-2.5-flash"]),
             patch("llm_advisors_cli.web.discover_ollama_models", return_value=["gemma4:latest", "llama3.1:8b"]),
         )
 
     def test_home_uses_advisor_slots_without_bare_provider_options(self):
-        cfg = AdvisorsConfig(members=["codex", "claude", "gemini"], chairman="codex")
+        cfg = AdvisorsConfig(members=["codex", "agy", "claude", "gemini"], chairman="codex")
         patches = self._patch_discovery()
-        with patch("llm_advisors_cli.web.load_config", return_value=cfg), patches[0], patches[1], patches[2], patches[3]:
+        with patch("llm_advisors_cli.web.load_config", return_value=cfg), patches[0], patches[1], patches[2], patches[3], patches[4]:
             response = web.app.test_client().get("/")
 
         html = response.get_data(as_text=True)
@@ -25,19 +26,22 @@ class WebSelectionTests(unittest.TestCase):
         self.assertIn('name="advisor_1"', html)
         self.assertIn('name="advisor_4"', html)
         self.assertNotIn('name="members"', html)
+        self.assertNotIn('<option value="agy"', html)
         self.assertNotIn('<option value="codex"', html)
         self.assertNotIn('<option value="claude"', html)
         self.assertNotIn('<option value="gemini"', html)
         self.assertIn('<option value="codex/gpt-5.5"', html)
         self.assertIn('<option value="codex/gpt-5.2"', html)
         self.assertIn('<option value="codex/gpt-5.4"', html)
+        self.assertIn('<option value="agy/Gemini 3.5 Flash (Medium)"', html)
+        self.assertIn('<option value="agy/Gemini 3.5 Flash (Low)"', html)
         self.assertIn('<option value="claude/sonnet"', html)
         self.assertIn('<option value="claude/opus"', html)
         self.assertIn('<option value="claude/haiku"', html)
         self.assertIn('<option value="gemini/gemini-2.5-flash"', html)
         self.assertIn('<option value="ollama/gemma4:latest"', html)
         self.assertIn('<option value="codex/gpt-5.2" selected', html)
-        self.assertIn('<option value="gemini/gemini-2.5-flash" selected', html)
+        self.assertIn('<option value="agy/Gemini 3.5 Flash (Medium)" selected', html)
         self.assertIn('<option value="codex/gpt-5.4" selected', html)
         self.assertIn('<option value="ollama/gemma4:latest" selected', html)
         self.assertIn('<option value="codex/gpt-5.5" selected', html)
@@ -65,6 +69,7 @@ class WebSelectionTests(unittest.TestCase):
             patches[1],
             patches[2],
             patches[3],
+            patches[4],
         ):
             response = client.post(
                 "/conversations",
@@ -73,17 +78,37 @@ class WebSelectionTests(unittest.TestCase):
                     "advisor_1": "codex/gpt-5.5",
                     "advisor_2": "codex/gpt-5.5",
                     "advisor_3": web.NONE_ADVISOR_VALUE,
-                    "advisor_4": "gemini/gemini-2.5-flash",
-                    "chair": "gemini/gemini-2.5-flash",
+                    "advisor_4": "agy/Gemini 3.5 Flash (Low)",
+                    "chair": "agy/Gemini 3.5 Flash (Low)",
                     "turns": "2",
                 },
             )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(created["members"], ["codex/gpt-5.5", "gemini/gemini-2.5-flash"])
-        self.assertEqual(created["chair"], "gemini/gemini-2.5-flash")
+        self.assertEqual(created["members"], ["codex/gpt-5.5", "agy/Gemini 3.5 Flash (Low)"])
+        self.assertEqual(created["chair"], "agy/Gemini 3.5 Flash (Low)")
         self.assertEqual(created["turns"], 2)
         self.assertTrue(created["started"])
+
+    def test_available_members_includes_configured_agy_models(self):
+        cfg = AdvisorsConfig(
+            members=["agy/Custom Model"],
+            chairman="agy/Chair Model",
+        )
+        cfg.providers["agy"] = ProviderConfig(
+            name="agy",
+            model="Gemini 3.5 Flash (Medium)",
+        )
+        patches = self._patch_discovery()
+
+        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+            members = web._available_members(cfg)
+
+        self.assertIn("agy/Gemini 3.5 Flash (Medium)", members)
+        self.assertIn("agy/Gemini 3.5 Flash (Low)", members)
+        self.assertIn("agy/Custom Model", members)
+        self.assertIn("agy/Chair Model", members)
+        self.assertNotIn("agy", members)
 
     def test_available_members_includes_configured_claude_models(self):
         cfg = AdvisorsConfig(
@@ -93,7 +118,7 @@ class WebSelectionTests(unittest.TestCase):
         cfg.providers["claude"] = ProviderConfig(name="claude", model="sonnet")
         patches = self._patch_discovery()
 
-        with patches[0], patches[1], patches[2], patches[3]:
+        with patches[0], patches[1], patches[2], patches[3], patches[4]:
             members = web._available_members(cfg)
 
         self.assertIn("claude/sonnet", members)
