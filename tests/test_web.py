@@ -11,14 +11,16 @@ class WebSelectionTests(unittest.TestCase):
             patch("llm_advisors_cli.web.discover_codex_models", return_value=["gpt-5.5", "gpt-5.2", "gpt-5.4"]),
             patch("llm_advisors_cli.web.discover_agy_models", return_value=["Gemini 3.5 Flash (Medium)", "Gemini 3.5 Flash (Low)"]),
             patch("llm_advisors_cli.web.discover_claude_models", return_value=["sonnet", "opus", "haiku"]),
-            patch("llm_advisors_cli.web.discover_gemini_models", return_value=["gemini-2.5-flash"]),
             patch("llm_advisors_cli.web.discover_ollama_models", return_value=["gemma4:latest", "llama3.1:8b"]),
         )
 
     def test_home_uses_advisor_slots_without_bare_provider_options(self):
-        cfg = AdvisorsConfig(members=["codex", "agy", "claude", "gemini"], chairman="codex")
+        cfg = AdvisorsConfig(
+            members=["codex", "agy", "claude", "ollama", "gemini", "gemini/gemini-2.5-flash"],
+            chairman="codex",
+        )
         patches = self._patch_discovery()
-        with patch("llm_advisors_cli.web.load_config", return_value=cfg), patches[0], patches[1], patches[2], patches[3], patches[4]:
+        with patch("llm_advisors_cli.web.load_config", return_value=cfg), patches[0], patches[1], patches[2], patches[3]:
             response = web.app.test_client().get("/")
 
         html = response.get_data(as_text=True)
@@ -29,7 +31,9 @@ class WebSelectionTests(unittest.TestCase):
         self.assertNotIn('<option value="agy"', html)
         self.assertNotIn('<option value="codex"', html)
         self.assertNotIn('<option value="claude"', html)
+        self.assertNotIn('<option value="ollama"', html)
         self.assertNotIn('<option value="gemini"', html)
+        self.assertNotIn('<option value="gemini/gemini-2.5-flash"', html)
         self.assertIn('<option value="codex/gpt-5.5"', html)
         self.assertIn('<option value="codex/gpt-5.2"', html)
         self.assertIn('<option value="codex/gpt-5.4"', html)
@@ -38,7 +42,6 @@ class WebSelectionTests(unittest.TestCase):
         self.assertIn('<option value="claude/sonnet"', html)
         self.assertIn('<option value="claude/opus"', html)
         self.assertIn('<option value="claude/haiku"', html)
-        self.assertIn('<option value="gemini/gemini-2.5-flash"', html)
         self.assertIn('<option value="ollama/gemma4:latest"', html)
         self.assertIn('<option value="codex/gpt-5.2" selected', html)
         self.assertIn('<option value="agy/Gemini 3.5 Flash (Medium)" selected', html)
@@ -69,7 +72,6 @@ class WebSelectionTests(unittest.TestCase):
             patches[1],
             patches[2],
             patches[3],
-            patches[4],
         ):
             response = client.post(
                 "/conversations",
@@ -101,7 +103,7 @@ class WebSelectionTests(unittest.TestCase):
         )
         patches = self._patch_discovery()
 
-        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        with patches[0], patches[1], patches[2], patches[3]:
             members = web._available_members(cfg)
 
         self.assertIn("agy/Gemini 3.5 Flash (Medium)", members)
@@ -109,6 +111,21 @@ class WebSelectionTests(unittest.TestCase):
         self.assertIn("agy/Custom Model", members)
         self.assertIn("agy/Chair Model", members)
         self.assertNotIn("agy", members)
+
+    def test_available_members_excludes_removed_gemini_config_entries(self):
+        cfg = AdvisorsConfig(
+            members=["gemini", "gemini/gemini-2.5-flash", "agy/Custom Model"],
+            chairman="gemini/gemini-2.5-pro",
+        )
+        patches = self._patch_discovery()
+
+        with patches[0], patches[1], patches[2], patches[3]:
+            members = web._available_members(cfg)
+
+        self.assertIn("agy/Custom Model", members)
+        self.assertNotIn("gemini", members)
+        self.assertNotIn("gemini/gemini-2.5-flash", members)
+        self.assertNotIn("gemini/gemini-2.5-pro", members)
 
     def test_available_members_includes_configured_claude_models(self):
         cfg = AdvisorsConfig(
@@ -118,7 +135,7 @@ class WebSelectionTests(unittest.TestCase):
         cfg.providers["claude"] = ProviderConfig(name="claude", model="sonnet")
         patches = self._patch_discovery()
 
-        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        with patches[0], patches[1], patches[2], patches[3]:
             members = web._available_members(cfg)
 
         self.assertIn("claude/sonnet", members)
@@ -140,7 +157,7 @@ class WebSelectionTests(unittest.TestCase):
                 "turn_index": 1,
                 "advisors": [
                     {"provider": "codex/gpt-5.2", "duration_seconds": 10},
-                    {"provider": "gemini/gemini-2.5-flash", "duration_seconds": 20},
+                    {"provider": "agy/Gemini 3.5 Flash (Low)", "duration_seconds": 20},
                 ],
                 "reviews": [
                     {"provider": "codex/gpt-5.2", "duration_seconds": 30},

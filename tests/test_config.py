@@ -27,7 +27,7 @@ class ConfigDefaultsTests(unittest.TestCase):
             config_path.write_text(
                 """
 [general]
-chair = "gemini/gemini-2.5-flash"
+chair = "agy/Gemini 3.5 Flash (Low)"
 chairman = "codex/gpt-5.2"
 """.strip(),
                 encoding="utf-8",
@@ -35,7 +35,7 @@ chairman = "codex/gpt-5.2"
             with patch("llm_advisors_cli.config.CONFIG_PATH", config_path):
                 cfg = load_config()
 
-        self.assertEqual(cfg.chairman, "gemini/gemini-2.5-flash")
+        self.assertEqual(cfg.chairman, "agy/Gemini 3.5 Flash (Low)")
 
 
 if __name__ == "__main__":

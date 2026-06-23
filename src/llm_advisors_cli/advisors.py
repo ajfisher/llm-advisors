@@ -55,7 +55,7 @@ def alog(msg: str) -> None:
 
 
 def _provider_base(name: str) -> str:
-    for provider in ("agy", "codex", "claude", "gemini", "ollama"):
+    for provider in ("agy", "codex", "claude", "ollama"):
         if name == provider or name.startswith(f"{provider}/"):
             return provider
     return name
@@ -157,11 +157,6 @@ async def _call_provider_async(
                     res.provider = name
             elif base == "claude":
                 model_override = _parse_model_member(name, "claude")
-                res = await fn(prompt, cfg, None, model_override, cancel_event)
-                if model_override:
-                    res.provider = name
-            elif base == "gemini":
-                model_override = _parse_model_member(name, "gemini")
                 res = await fn(prompt, cfg, None, model_override, cancel_event)
                 if model_override:
                     res.provider = name
