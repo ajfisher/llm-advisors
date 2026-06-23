@@ -3,11 +3,10 @@ from unittest.mock import patch
 
 from llm_advisors_cli.advisors import ConcurrencyLimiter, _call_provider_async
 from llm_advisors_cli.config import AdvisorsConfig, ProviderConfig
+from llm_advisors_cli.exceptions import ProviderError
 from llm_advisors_cli.providers import (
-    _parse_gemini_output,
     ask_agy,
     ask_claude,
-    ask_gemini,
     discover_agy_models,
     discover_claude_models,
     sanitize_provider_output,
@@ -23,37 +22,6 @@ class ProviderOutputTests(unittest.TestCase):
         self.assertNotIn("\x1b", cleaned)
         self.assertNotIn("\x07", cleaned)
         self.assertIn("Final answer", cleaned)
-
-    def test_parse_gemini_json_output_uses_response_field(self):
-        raw = '{"response": "Final\\nanswer", "stats": {"models": []}}'
-
-        self.assertEqual(_parse_gemini_output(raw), "Final\nanswer")
-
-
-class GeminiCommandTests(unittest.IsolatedAsyncioTestCase):
-    async def test_gemini_uses_json_output_and_no_thinking_alias(self):
-        cfg = AdvisorsConfig(thinking_enabled=False)
-        captured = {}
-
-        async def fake_run(provider, cmd, cwd=None, cancel_event=None):
-            captured["provider"] = provider
-            captured["cmd"] = cmd
-            return '{"response": "ok"}'
-
-        with patch("llm_advisors_cli.providers._run_cmd_async", fake_run):
-            result = await ask_gemini(
-                "Question?",
-                cfg,
-                model_override="gemini-2.5-flash",
-            )
-
-        self.assertEqual(result.answer, "ok")
-        self.assertEqual(result.provider, "gemini/gemini-2.5-flash")
-        self.assertEqual(result.meta["runtime_model"], "gemini-2.5-flash-base")
-        self.assertIn("--output-format", captured["cmd"])
-        self.assertIn("json", captured["cmd"])
-        self.assertEqual(captured["cmd"][2], "gemini-2.5-flash-base")
-        self.assertTrue(captured["cmd"][-1].startswith("Answer directly."))
 
 
 class AgyCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -192,6 +160,21 @@ class AgyDiscoveryTests(unittest.TestCase):
             models = discover_agy_models(cfg)
 
         self.assertEqual(models, ["Gemini 3.5 Flash (Medium)"])
+
+
+class UnsupportedProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gemini_provider_is_not_configured(self):
+        cfg = AdvisorsConfig()
+
+        with self.assertRaises(ProviderError):
+            await _call_provider_async(
+                "gemini/gemini-2.5-flash",
+                "Question?",
+                cfg,
+                ConcurrencyLimiter(cfg),
+                stage="stage1",
+                turn_index=1,
+            )
 
 
 class ClaudeCommandTests(unittest.IsolatedAsyncioTestCase):

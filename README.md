@@ -5,7 +5,6 @@ A small CLI and web app that lets you run a "board of LLMs as advisors" using:
 - Codex (OpenAI CLI)
 - Claude Code
 - Antigravity CLI
-- Gemini CLI (legacy / enterprise)
 - Ollama (local models)
 
 It **does not** use any extra API keys – it shells out to the official CLIs,
@@ -21,8 +20,7 @@ via OpenRouter/API keys, it coordinates multiple CLIs you already use.
 ## 1. What it does
 
 Run a structured, multi-turn “council” of LLMs via the CLIs you already have.
-It shells out to Codex/Claude/Antigravity/Gemini/Ollama and orchestrates up to
-4 turns:
+It shells out to Codex/Claude/Antigravity/Ollama and orchestrates up to 4 turns:
 
 - **Turn 1 - baseline**: advisors answer freely; chair synthesises and
   produces a summary object.
@@ -36,9 +34,8 @@ It shells out to Codex/Claude/Antigravity/Gemini/Ollama and orchestrates up to
 Roles rotate after turn 1 to avoid stagnation. All prompts/results are logged
 per conversation; the web UI shows live status and stores artefacts for later
 review. Claude aliases, Codex/Antigravity defaults, and Ollama models on your
-machine are shown as model options in the web UI. Gemini CLI remains available
-for eligible accounts, but consumer Gemini CLI usage has moved to Antigravity
-CLI.
+machine are shown as model options in the web UI. For Google Gemini-family
+models, use Antigravity CLI via `agy/<model>`.
 
 [![Screenshot of LLM Advisors](https://img.youtube.com/vi/7Xft86ihGfs/0.jpg)](https://www.youtube.com/watch?v=7Xft86ihGfs)
 
@@ -55,7 +52,6 @@ You’ll need:
   - `codex` (OpenAI / ChatGPT CLI)
   - `claude` (Claude Code CLI)
   - `agy` (Antigravity CLI)
-  - `gemini` (Gemini CLI, legacy / enterprise)
   - `ollama` (local LLM runtime)
 
 Each CLI must already be:
@@ -69,8 +65,7 @@ Google announced that Gemini CLI stopped serving requests for unpaid tier,
 Google AI Pro, and Ultra users on June 18, 2026, and moved those users to
 Antigravity CLI:
 https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/
-Keep using the `gemini` provider only if your local Gemini CLI is backed by an
-eligible Standard, Enterprise, or API-key setup.
+This project supports the Google model path through the `agy` provider.
 
 For Ollama, you’ll also need at least one model pulled, for example:
 
@@ -103,7 +98,7 @@ llm-advisors "When should I use vector search vs full text search?"
 Useful flags:
 
 - `--members`: override which providers answer/review (defaults to config).
-  Accepts `codex claude agy gemini ollama` and provider model overrides like
+  Accepts `codex claude agy ollama` and provider model overrides like
   `codex/gpt-5.5`, `claude/sonnet`, `agy/Gemini 3.5 Flash (Medium)`, and
   `ollama/llama3.1:8b`.
 - `--chair`: choose who synthesises the final answer (defaults to config).
@@ -114,8 +109,7 @@ Useful flags:
 - `--show-turns`: print a short summary per turn after the final answer.
 - `--max-parallel`: global max concurrent provider calls (default 4).
 - `--no-thinking`: prefer faster direct responses by lowering/disabling model
-  thinking where the provider CLI supports it. Gemini is run in JSON output mode
-  and uses known no-thinking aliases where available.
+  thinking where the provider CLI supports it.
 - `--ollama-parallel-mode`: `sequential` (default) | `limited` | `parallel`.
 - `--ollama-max-parallel`: when mode=`limited`, how many Ollama calls to allow.
 - `--log-dir`: where to write conversation artefacts (default
@@ -168,7 +162,7 @@ python -m llm_advisors_cli.web
 It serves on `http://127.0.0.1:8000/` and lets you start conversations, pick
 advisors/chair/turns, watch live per-member status (with a stop control), and
 browse/delete past runs from `conversations/`. Codex, Claude, Antigravity,
-Gemini, and Ollama model variants are shown as `provider/<model>` options where
+and Ollama model variants are shown as `provider/<model>` options where
 they can be discovered locally or inferred from supported aliases/configuration.
 
 ### Screenshots
@@ -221,10 +215,6 @@ enabled = true
 command = "agy"
 model = "Gemini 3.5 Flash (Medium)" # default model when using bare `agy`
 extra_args = ["--print-timeout", "5m"]
-
-[providers.gemini]
-enabled = false                     # legacy; requires eligible Gemini CLI access
-model = "gemini-3-flash-preview"   # default model when using bare `gemini`
 
 [providers.ollama]
 model = "llama3.2"                  # default model when using bare `ollama`

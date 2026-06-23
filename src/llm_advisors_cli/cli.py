@@ -85,7 +85,7 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
 
     parser = argparse.ArgumentParser(
         prog="llm-advisors",
-        description="Multi-model advisors using Codex, Claude Code, Antigravity CLI, Gemini CLI and Ollama",
+        description="Multi-model advisors using Codex, Claude Code, Antigravity CLI and Ollama",
     )
 
     parser.add_argument(
@@ -99,7 +99,7 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         default=_default_members(cfg, ollama_models),
         help=(
             "Council members (default from config). "
-            "Options: codex claude agy gemini ollama or provider/model "
+            "Options: codex claude agy ollama or provider/model "
             "e.g. 'codex/gpt-5.5' 'claude/sonnet' "
             "'agy/Gemini 3.5 Flash (Medium)' 'ollama/llama3.1:8b'"
         ),
@@ -111,7 +111,7 @@ def _parse_args(cfg: AdvisorsConfig, argv: List[str] | None = None) -> argparse.
         default=cfg.chairman,
         help=(
             "Chair provider for final synthesis (default from config). "
-            "Can be codex, claude, agy, gemini, ollama or provider/model."
+            "Can be codex, claude, agy, ollama or provider/model."
         ),
     )
     parser.add_argument(

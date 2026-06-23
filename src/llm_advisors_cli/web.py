@@ -17,7 +17,6 @@ from .providers import (
     discover_agy_models,
     discover_claude_models,
     discover_codex_models,
-    discover_gemini_models,
     discover_ollama_models,
 )
 import markdown
@@ -26,7 +25,8 @@ app = Flask(__name__)
 app.secret_key = "llm-advisors"
 
 NONE_ADVISOR_VALUE = "__none__"
-BARE_WEB_PROVIDERS = {"agy", "codex", "claude", "gemini", "ollama"}
+SUPPORTED_WEB_PROVIDERS = {"agy", "codex", "claude", "ollama"}
+BARE_WEB_PROVIDERS = SUPPORTED_WEB_PROVIDERS
 PREFERRED_ADVISOR_OPTIONS = [
     ("codex/gpt-5.2",),
     ("agy/Gemini 3.5 Flash (Medium)",),
@@ -303,8 +303,8 @@ jobs: Dict[str, ConversationJob] = {}
 
 def _available_members(cfg: AdvisorsConfig) -> List[str]:
     options = set()
-    options.update([m for m in cfg.members if m not in BARE_WEB_PROVIDERS])
-    if cfg.chairman and cfg.chairman not in BARE_WEB_PROVIDERS:
+    options.update([m for m in cfg.members if _is_supported_member_option(m)])
+    if cfg.chairman and _is_supported_member_option(cfg.chairman):
         options.add(cfg.chairman)
     for candidates in PREFERRED_ADVISOR_OPTIONS:
         options.add(candidates[0])
@@ -320,9 +320,6 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
     for model in discover_claude_models(cfg):
         options.add(f"claude/{model}")
 
-    for model in discover_gemini_models(cfg):
-        options.add(f"gemini/{model}")
-
     # Dynamically discover Ollama models and add as ollama/<model>
     ollama_models = discover_ollama_models(cfg)
     for model in ollama_models:
@@ -330,16 +327,23 @@ def _available_members(cfg: AdvisorsConfig) -> List[str]:
 
     # Honour explicitly configured local or alias-backed model entries.
     for name in cfg.members:
-        if name.startswith(("agy/", "claude/", "ollama/")):
+        if _is_supported_member_option(name):
             options.add(name)
-    if cfg.chairman.startswith(("agy/", "claude/", "ollama/")):
+    if _is_supported_member_option(cfg.chairman):
         options.add(cfg.chairman)
 
     return sorted(options, key=_member_sort_key)
 
 
+def _is_supported_member_option(member: str) -> bool:
+    if "/" not in member:
+        return False
+    base = member.split("/", 1)[0]
+    return base in SUPPORTED_WEB_PROVIDERS
+
+
 def _member_sort_key(member: str) -> tuple[int, str]:
-    order = {"codex": 0, "agy": 1, "claude": 2, "gemini": 3, "ollama": 4}
+    order = {"codex": 0, "agy": 1, "claude": 2, "ollama": 3}
     base = member.split("/", 1)[0]
     return (order.get(base, 99), member)
 
