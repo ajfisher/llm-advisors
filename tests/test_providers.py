@@ -5,8 +5,10 @@ from llm_advisors_cli.advisors import ConcurrencyLimiter, _call_provider_async
 from llm_advisors_cli.config import AdvisorsConfig, ProviderConfig
 from llm_advisors_cli.providers import (
     _parse_gemini_output,
+    ask_agy,
     ask_claude,
     ask_gemini,
+    discover_agy_models,
     discover_claude_models,
     sanitize_provider_output,
 )
@@ -52,6 +54,144 @@ class GeminiCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("json", captured["cmd"])
         self.assertEqual(captured["cmd"][2], "gemini-2.5-flash-base")
         self.assertTrue(captured["cmd"][-1].startswith("Answer directly."))
+
+
+class AgyCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_agy_model_override_uses_print_mode_and_model(self):
+        cfg = AdvisorsConfig()
+        captured = {}
+
+        async def fake_run(provider, cmd, cwd=None, cancel_event=None):
+            captured["provider"] = provider
+            captured["cmd"] = cmd
+            return "ok"
+
+        with patch("llm_advisors_cli.providers._run_cmd_async", fake_run):
+            result = await ask_agy(
+                "Question?",
+                cfg,
+                model_override="Gemini 3.5 Flash (Low)",
+            )
+
+        self.assertEqual(result.answer, "ok")
+        self.assertEqual(result.provider, "agy/Gemini 3.5 Flash (Low)")
+        self.assertEqual(result.meta["model"], "Gemini 3.5 Flash (Low)")
+        self.assertEqual(captured["provider"], "agy")
+        self.assertEqual(
+            captured["cmd"],
+            [
+                "agy",
+                "-p",
+                "--model",
+                "Gemini 3.5 Flash (Low)",
+                "Question?",
+            ],
+        )
+
+    async def test_agy_preserves_extra_args_and_configured_model(self):
+        cfg = AdvisorsConfig()
+        cfg.providers["agy"] = ProviderConfig(
+            name="agy",
+            model="Gemini 3.1 Pro (Low)",
+            extra_args=["--print", "--print-timeout", "30s"],
+        )
+        captured = {}
+
+        async def fake_run(provider, cmd, cwd=None, cancel_event=None):
+            captured["cmd"] = cmd
+            return "ok"
+
+        with patch("llm_advisors_cli.providers._run_cmd_async", fake_run):
+            result = await ask_agy("Question?", cfg)
+
+        self.assertEqual(result.provider, "agy")
+        self.assertEqual(result.meta["model"], "Gemini 3.1 Pro (Low)")
+        self.assertNotIn("-p", captured["cmd"])
+        self.assertEqual(
+            captured["cmd"],
+            [
+                "agy",
+                "--print",
+                "--print-timeout",
+                "30s",
+                "--model",
+                "Gemini 3.1 Pro (Low)",
+                "Question?",
+            ],
+        )
+
+    async def test_agy_model_member_dispatches_with_override(self):
+        cfg = AdvisorsConfig()
+        captured = {}
+
+        async def fake_run(provider, cmd, cwd=None, cancel_event=None):
+            captured["cmd"] = cmd
+            return "ok"
+
+        with patch("llm_advisors_cli.providers._run_cmd_async", fake_run):
+            result = await _call_provider_async(
+                "agy/Gemini 3.5 Flash (High)",
+                "Question?",
+                cfg,
+                ConcurrencyLimiter(cfg),
+                stage="stage1",
+                turn_index=1,
+            )
+
+        self.assertEqual(result.provider, "agy/Gemini 3.5 Flash (High)")
+        self.assertEqual(result.meta["model"], "Gemini 3.5 Flash (High)")
+        self.assertEqual(
+            captured["cmd"],
+            [
+                "agy",
+                "-p",
+                "--model",
+                "Gemini 3.5 Flash (High)",
+                "Question?",
+            ],
+        )
+
+
+class AgyDiscoveryTests(unittest.TestCase):
+    def test_discover_agy_models_parses_cli_output_and_dedupes_configured_model(self):
+        cfg = AdvisorsConfig()
+        cfg.providers["agy"] = ProviderConfig(
+            name="agy",
+            model="Gemini 3.5 Flash (Low)",
+        )
+        completed = type(
+            "Completed",
+            (),
+            {
+                "stdout": "\n".join(
+                    [
+                        "Gemini 3.5 Flash (Medium)",
+                        "Gemini 3.5 Flash (Low)",
+                        "Claude Sonnet 4.6 (Thinking)",
+                    ]
+                )
+            },
+        )()
+
+        with patch("llm_advisors_cli.providers.subprocess.run", return_value=completed):
+            models = discover_agy_models(cfg)
+
+        self.assertEqual(
+            models,
+            [
+                "Gemini 3.5 Flash (Low)",
+                "Gemini 3.5 Flash (Medium)",
+                "Claude Sonnet 4.6 (Thinking)",
+            ],
+        )
+
+    def test_discover_agy_models_falls_back_to_default(self):
+        cfg = AdvisorsConfig()
+
+        with patch("llm_advisors_cli.providers.subprocess.run", side_effect=OSError):
+            models = discover_agy_models(cfg)
+
+        self.assertEqual(models, ["Gemini 3.5 Flash (Medium)"])
 
 
 class ClaudeCommandTests(unittest.IsolatedAsyncioTestCase):

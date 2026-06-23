@@ -14,7 +14,7 @@ class ConfigDefaultsTests(unittest.TestCase):
             cfg.members,
             [
                 "codex/gpt-5.2",
-                "gemini/gemini-2.5-flash",
+                "agy/Gemini 3.5 Flash (Medium)",
                 "codex/gpt-5.4",
                 "ollama/gemma4:latest",
             ],
