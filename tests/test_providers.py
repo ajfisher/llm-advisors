@@ -81,9 +81,9 @@ class AgyCommandTests(unittest.IsolatedAsyncioTestCase):
             captured["cmd"],
             [
                 "agy",
-                "-p",
                 "--model",
                 "Gemini 3.5 Flash (Low)",
+                "-p",
                 "Question?",
             ],
         )
@@ -111,11 +111,11 @@ class AgyCommandTests(unittest.IsolatedAsyncioTestCase):
             captured["cmd"],
             [
                 "agy",
-                "--print",
-                "--print-timeout",
-                "30s",
                 "--model",
                 "Gemini 3.1 Pro (Low)",
+                "--print-timeout",
+                "30s",
+                "--print",
                 "Question?",
             ],
         )
@@ -144,9 +144,9 @@ class AgyCommandTests(unittest.IsolatedAsyncioTestCase):
             captured["cmd"],
             [
                 "agy",
-                "-p",
                 "--model",
                 "Gemini 3.5 Flash (High)",
+                "-p",
                 "Question?",
             ],
         )

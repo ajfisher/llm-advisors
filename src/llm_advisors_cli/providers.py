@@ -48,6 +48,7 @@ GEMINI_NO_THINKING_ALIASES = {
     "gemini-2.5-flash": "gemini-2.5-flash-base",
     "gemini-3-flash-preview": "gemini-3-flash-base",
 }
+AGY_PRINT_OPTIONS = {"-p", "--print", "--prompt"}
 
 _ANSI_ESCAPE_RE = re.compile(
     r"\x1b(?:"
@@ -225,13 +226,18 @@ async def ask_agy(
     pcfg = _merge_provider_config("agy", cfg)
     model = model_override or pcfg.model
     cmd = [pcfg.command or "agy"]
-    if not _has_cli_option(pcfg.extra_args, {"-p", "--print", "--prompt"}):
-        cmd.append("-p")
-    if pcfg.extra_args:
-        cmd.extend(pcfg.extra_args)
     if model:
         cmd.extend(["--model", model])
-    cmd.append(prompt)
+    print_option = "-p"
+    for arg in pcfg.extra_args:
+        if arg in AGY_PRINT_OPTIONS:
+            print_option = arg
+            continue
+        if any(arg.startswith(f"{option}=") for option in AGY_PRINT_OPTIONS):
+            print_option = arg.split("=", 1)[0]
+            continue
+        cmd.append(arg)
+    cmd.extend([print_option, prompt])
     raw = await _run_cmd_async("agy", cmd, cwd=cwd, cancel_event=cancel_event)
     answer = sanitize_provider_output(raw)
     provider_name = f"agy/{model}" if model_override and model else "agy"
